@@ -1,1 +1,1 @@
-{"dependencies": ["."], "graphs": {"agent": "src/agents/agent.py:agent"}, "env": ".env"}
+{"dependencies": ["."], "graphs": {"agent": "src/agent.py:agent"}, "env": ".env"}
