@@ -322,4 +322,4 @@ class WebSearchAgent(AgentProtocol):
         return g.compile(name="WebSearchAgent")
 
 config = SearchAgentConfig()
-agent = WebSearchAgent(config).graph
+websearch = WebSearchAgent(config).graph

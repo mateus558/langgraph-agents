@@ -1,1 +1,1 @@
-{"dependencies": ["."], "graphs": {"websearch": "src/websearch/agent.py:agent"}, "env": ".env"}
+{"dependencies": ["."], "graphs": {"websearch": "src/websearch/agent.py:websearch"}, "env": ".env"}
