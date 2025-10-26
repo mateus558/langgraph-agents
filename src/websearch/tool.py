@@ -122,7 +122,6 @@ def websearch(
         inputs = [
             {
                 "query": q,
-                "messages": [HumanMessage(content=q)],
                 "categories": None,
                 "results": None,
                 "summary": None,

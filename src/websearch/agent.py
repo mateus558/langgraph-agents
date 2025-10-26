@@ -196,6 +196,8 @@ class WebSearchAgent(AgentProtocol):
                 # Append 'general' to broaden the search and ensure fallback
                 cats = [*cats, "general"]
 
+            state["categories"] = cats  # Update state with ensured categories  
+
             kwargs: Dict[str, Any] = {
                 "categories": cats,
                 "num_results": self.config.k * 2,
