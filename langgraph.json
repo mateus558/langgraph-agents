@@ -1,6 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
+    "chatagent": "./src/chatagent/agent.py:chatagent",
     "websearch": "./src/websearch/agent.py:websearch"
   },
   "env": ".env"
