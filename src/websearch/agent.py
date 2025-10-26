@@ -29,6 +29,7 @@ from websearch.utils import (
     canonical_url,
     pick_time_range,
 )
+from langgraph.types import CachePolicy
 from dotenv import load_dotenv
 load_dotenv()  # sem argumentos: carrega arquivo `.env` do diretório atual ou acima
 
@@ -306,8 +307,12 @@ class WebSearchAgent(AgentProtocol):
         g = StateGraph(SearchState)
 
         g.add_node("categorize_query", self._build_categorize_node())
-        g.add_node("web_search", self._build_web_search_node())
-        g.add_node("summarize", self._build_summarize_node())
+        g.add_node("web_search", 
+                   self._build_web_search_node(),
+                   cache_policy=CachePolicy(ttl=120))
+        g.add_node("summarize", 
+                   self._build_summarize_node(),
+                   cache_policy=CachePolicy(ttl=120))
 
         g.add_edge(START, "categorize_query")
         g.add_edge("categorize_query", "web_search")
@@ -315,6 +320,6 @@ class WebSearchAgent(AgentProtocol):
         g.add_edge("summarize", END)
 
         return g.compile(name="WebSearchAgent")
-    
 
-agent = WebSearchAgent().graph
+config = SearchAgentConfig()
+agent = WebSearchAgent(config).graph
