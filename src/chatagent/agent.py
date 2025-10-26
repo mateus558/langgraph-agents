@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from langchain.chat_models import init_chat_model
 from langchain.messages import HumanMessage, SystemMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
-from langgraph.store.memory import InMemoryStore
 
 from core.contracts import AgentProtocol
 from chatagent.summarizer import OllamaSummarizer

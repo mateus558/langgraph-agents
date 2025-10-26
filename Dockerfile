@@ -9,7 +9,7 @@ ADD . /deps/agents
 # -- Installing all local dependencies --
 RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .);             fi;         done
 # -- End of local dependencies install --
-ENV LANGSERVE_GRAPHS='{"websearch": "/deps/agents/src/websearch/agent.py:websearch"}'
+ENV LANGSERVE_GRAPHS='{"chatagent": "/deps/agents/src/chatagent/agent.py:chatagent", "websearch": "/deps/agents/src/websearch/agent.py:websearch"}'
 
 
 
