@@ -65,6 +65,7 @@ logs/
 
 # Jupyter
 .ipynb_checkpoints/
+playground/
 
 # Local env files
 .env

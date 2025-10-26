@@ -7,8 +7,18 @@ requires-python = ">=3.11"
 dependencies = [
     "dotenv>=0.9.9",
     "langchain>=1.0.2",
+    "langchain-community>=0.4",
     "langchain-ollama>=1.0.0",
     "langchain-openai>=1.0.1",
     "langgraph>=1.0.1",
     "langgraph-cli[inmem]>=0.4.4",
 ]
+
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
