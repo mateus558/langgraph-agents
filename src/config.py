@@ -29,7 +29,7 @@ import os
 
 @dataclass(slots=True)
 class Settings:
-    model_name: str = "llama3.1"
+    model_name: str = "openai:gpt-5-nano"
     base_url: str | None = "http://192.168.0.5:11434"
     embeddings_model: str = "nomic-embed-text"
 

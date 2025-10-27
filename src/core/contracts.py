@@ -48,13 +48,13 @@ class AgentConfig:
         if self.base_url is not None:
             # When base_url is provided, assume Ollama-compatible endpoint
             self.model = init_chat_model(
-                model_name=self.model_name,  # type: ignore[arg-type]
+                model=self.model_name,  # type: ignore[arg-type]
                 model_provider="ollama",
                 base_url=self.base_url,
             )
         else:
             # Without base_url, use OpenAI (or default cloud provider)
             self.model = init_chat_model(
-                model_name=self.model_name,  # type: ignore[arg-type]
+                model=self.model_name,  # type: ignore[arg-type]
                 model_provider="openai",
             )
