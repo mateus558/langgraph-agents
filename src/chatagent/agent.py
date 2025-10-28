@@ -19,6 +19,13 @@ from utils.messages import TokenEstimator, coerce_message_content
 
 logger = logging.getLogger(__name__)
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
+
 
 @dataclass
 class ChatAgentConfig:
@@ -27,7 +34,7 @@ class ChatAgentConfig:
     model_name: str | None = None
     base_url: str | None = None
     temperature: float = 0.5
-    num_ctx: int = 131072
+    num_ctx: int | None = None
     # allow callers to choose streaming-by-default semantics if they want
     default_stream: bool = False
 
@@ -56,51 +63,6 @@ class ChatAgent(AgentMixin):
         self._tokenizer = TokenEstimator()
 
         self.build()
-
-    # ---------------------------
-    # Public API (sync/async/stream)
-    # ---------------------------
-
-    def invoke(self, state: AgentState) -> Any:
-        """Sync convenience wrapper for async invoke."""
-        return asyncio.run(self.ainvoke(state))
-
-    async def ainvoke(self, state: AgentState) -> Any:
-        agent = self.ensure_built()
-        # Ensure run id and streaming flag present
-        run_id = state.get("metadata", {}).get("run_id") if state.get("metadata") else None
-        if not run_id:
-            run_id = uuid.uuid4().hex
-            meta = state.get("metadata", {})
-            meta["run_id"] = run_id
-            state["metadata"] = meta
-        if "stream" not in state:
-            state["stream"] = self.config.default_stream
-        t0 = time.perf_counter()
-        result = await agent.ainvoke(state)
-        latency_ms = (time.perf_counter() - t0) * 1000.0
-        # record structured stats
-        stats = state.get("stats", {})
-        stats["latency_ms"] = latency_ms
-        state["stats"] = stats
-        logger.info(
-            "chatagent.run_complete",
-            extra={"run_id": run_id, "latency_ms": latency_ms},
-        )
-        return result
-
-    async def astream(self, state: AgentState) -> AsyncIterator[Any]:
-        """Stream graph events/results asynchronously."""
-        agent = self.ensure_built()
-        if "stream" not in state:
-            state["stream"] = True  # force streaming for this call
-        run_id = uuid.uuid4().hex
-        meta = state.get("metadata", {})
-        meta["run_id"] = run_id
-        state["metadata"] = meta
-        async for event in agent.astream(state):
-            # you can also enrich events with run_id if desired
-            yield event
 
     # ---------------------------
     # Node builders (async-first)
