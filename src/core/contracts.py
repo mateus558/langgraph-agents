@@ -1,9 +1,10 @@
 # core/contracts.py
 from __future__ import annotations
 
+import asyncio
 import threading
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, AsyncIterator
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
@@ -18,21 +19,26 @@ from config import get_settings
 class PromptProtocol(Protocol):
     """Protocol for prompt interface compatibility."""
     prompt: str
-
-    def format(self, **kwargs: Any) -> str:
-        ...
+    def format(self, **kwargs: Any) -> str: ...
 
 
 class AgentProtocol(Protocol):
-    """Protocol for agent interface compatibility."""
+    """Standardized lifecycle and execution for agents."""
+    # Compiled/invokable object (e.g., LangGraph compiled graph)
+    agent: Any
+    # Optional: concrete configs on subclasses
     config: "AgentConfig | None"
-    agent: Any  # compiled/ready graph
 
-    def invoke(self, state: Any) -> Any: ...
+    # Build lifecycle
     def _build_graph(self) -> Any: ...
-    def build(self) -> Any: ...
-    def get_graph(self) -> Any: ...
+    def build(self, force: bool = False) -> "AgentProtocol": ...
+    def ensure_built(self) -> Any: ...
     def get_mermaid(self) -> str: ...
+
+    # Execution
+    def invoke(self, state: Any) -> Any: ...
+    async def ainvoke(self, state: Any) -> Any: ...
+    async def astream(self, state: Any) -> AsyncIterator[Any]: ...
 
 
 # ---------------------------
@@ -40,8 +46,7 @@ class AgentProtocol(Protocol):
 # ---------------------------
 
 class ModelFactory:
-    """Small factory to create chat models while isolating provider quirks."""
-
+    """Factory to create chat models while isolating provider-specific quirks."""
     @staticmethod
     def create_chat_model(
         model_name: str,
@@ -52,23 +57,19 @@ class ModelFactory:
         extra: dict[str, Any] | None = None,
     ) -> BaseChatModel:
         provider = "ollama" if base_url else "openai"
-
         kwargs: dict[str, Any] = {}
         if temperature is not None:
             kwargs["temperature"] = temperature
-
-        # Only Ollama understands num_ctx; do not leak to OpenAI.
+        # Only Ollama supports num_ctx; don't pass it to OpenAI
         if provider == "ollama" and num_ctx:
             kwargs["num_ctx"] = num_ctx
-
         if extra:
             kwargs.update(extra)
-
         return init_chat_model(
             model=model_name,
             model_provider=provider,
             base_url=base_url,
-            **kwargs,  # NOTE: not "kwargs=kwargs"
+            **kwargs,
         )
 
 
@@ -91,13 +92,13 @@ class AgentConfig:
         self.base_url = self.base_url if self.base_url is not None else settings.base_url
         self.embeddings_model = self.embeddings_model or settings.embeddings_model
 
-        # --- narrow to non-optional for the factory call ---
-        model_name: str = self.model_name  # type: ignore[assignment]
-        if model_name is None:
-            raise ValueError("model_name must be set in settings or AgentConfig")
+        # Narrow to non-empty string for static type-checkers
+        mn = self.model_name or ""
+        if not mn:
+            raise ValueError("model_name must be set via AgentConfig or settings")
 
         self.model = ModelFactory.create_chat_model(
-            model_name=model_name,
+            model_name=mn,
             base_url=self.base_url,
             temperature=self.temperature,
             num_ctx=self.num_ctx,
@@ -105,16 +106,16 @@ class AgentConfig:
 
 
 # ---------------------------
-# Agent Mixin (thread-safe, lazy/eager)
+# Agent Mixin (no .graph; uses only .agent)
 # ---------------------------
 
 class AgentMixin:
-    """Default build/get_graph/get_mermaid with thread-safe build."""
+    """Thin mixin: thread-safe build + standardized sync/async/stream execution."""
     config: Any
+    # Holds the compiled/invokable object (e.g., LangGraph compiled graph)
     agent: Any
 
     def __init__(self, *args, **kwargs) -> None:
-        # Subclasses may override __init__; call super().__init__ if they do.
         self.agent = None
         self._build_lock = threading.Lock()
 
@@ -122,28 +123,56 @@ class AgentMixin:
         raise NotImplementedError
 
     def build(self, force: bool = False):
+        """Compile (or recompile) and store the invokable agent object."""
         if self.agent is not None and not force:
             return self
         with self._build_lock:
             if self.agent is None or force:
-                compiled = self._build_graph()
-                self.agent = compiled
+                self.agent = self._build_graph()
         return self
 
     def ensure_built(self):
+        """Ensure the compiled agent exists; build on first use."""
         if self.agent is None:
             self.build()
         return self.agent
 
-    def get_graph(self) -> Any:
-        g = self.agent
-        if g is None:
-            raise RuntimeError("Agent graph is not built. Call build() first.")
-        return g
-
     def get_mermaid(self) -> str:
-        g = self.get_graph()
+        """Ask the compiled agent for a Mermaid diagram (if available)."""
+        agent = self.ensure_built()
+        # LangGraph compiled graphs expose .get_graph().draw_mermaid()
         try:
-            return str(g.get_graph().draw_mermaid())
-        except Exception as e:  # pragma: no cover
-            raise RuntimeError(f"Failed to draw mermaid diagram: {e}") from e
+            return str(agent.get_graph().draw_mermaid())
+        except AttributeError as e:
+            raise RuntimeError("Compiled agent does not expose get_graph().draw_mermaid().") from e
+        except Exception as e:
+            raise RuntimeError(f"Failed to generate Mermaid diagram: {e}") from e
+
+    # ---------------------------
+    # Standardized execution
+    # ---------------------------
+
+    def invoke(self, state: Any) -> Any:
+        """Synchronous wrapper; only safe outside an active event loop."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.ainvoke(state))
+        raise RuntimeError("invoke() called inside an event loop. Use `await ainvoke(...)` instead.")
+
+    async def ainvoke(self, state: Any) -> Any:
+        """Asynchronous execution of the compiled agent."""
+        agent = self.ensure_built()
+        if hasattr(agent, "ainvoke"):
+            return await agent.ainvoke(state)  # type: ignore[attr-defined]
+        return await asyncio.to_thread(agent.invoke, state)
+
+    async def astream(self, state: Any) -> AsyncIterator[Any]:
+        """Asynchronous streaming of graph events/results."""
+        agent = self.ensure_built()
+        if hasattr(agent, "astream"):
+            async for ev in agent.astream(state):  # type: ignore[attr-defined]
+                yield ev
+            return
+        # Fallback: no native streaming; emit a single result
+        yield await self.ainvoke(state)

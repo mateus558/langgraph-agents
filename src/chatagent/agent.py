@@ -55,9 +55,7 @@ class ChatAgent(AgentMixin):
         # Token estimator (pure, cheap)
         self._tokenizer = TokenEstimator()
 
-        # Build lazily; callers can still opt into eager by calling .build()
-        # or you can flip to eager here if you prefer.
-        # self.build()
+        self.build()
 
     # ---------------------------
     # Public API (sync/async/stream)

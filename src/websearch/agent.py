@@ -1,29 +1,26 @@
 # websearch/agent.py
 
-"""WebSearch agent implementation.
+"""WebSearch agent implementation (async-first).
 
-This module defines the WebSearchAgent class that orchestrates the flow
-categorize -> search -> summarize using SearxNG and an LLM.
+Flow: categorize -> search -> summarize using SearxNG and an LLM.
 
-Key improvements:
-- Guaranteed model initialization (when absent in config)
-- ModelFactory centraliza diferenças entre providers (OpenAI/Ollama)
-- with_structured_output criado no momento da chamada (sem congelar em closure)
-- Nós não mutam o estado de entrada; retornam apenas deltas
-- Erros de busca não inserem HumanMessage; retorno limpo + logging
-- União de allow/block engines por categoria
-- Sanitização extra para remover URLs fora da whitelist
-- Logging estruturado (sem prints)
+Highlights:
+- Async-first em todos os nós (ainvoke/astream)
+- SearxNG síncrono encapsulado com asyncio.to_thread
+- Retry/backoff assíncrono (await asyncio.sleep)
+- ModelFactory centraliza diferenças OpenAI/Ollama
+- Nós retornam apenas deltas (state as source of truth)
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
 import time
 from json import JSONDecodeError
-from typing import Any, cast
+from typing import Any, AsyncIterator, cast
 
 from langchain_community.utilities import SearxSearchWrapper
 from langchain_core.language_models import BaseChatModel
@@ -44,7 +41,7 @@ from websearch.utils import (
     pick_time_range,
 )
 
-# Optional: load .env here if needed. In production, prefer doing it in the app bootstrap.
+# Optional: load .env aqui; em prod prefira fazer no bootstrap da app.
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -57,22 +54,11 @@ if not logger.handlers:
 
 
 class WebSearchAgent(AgentMixin):
-    # Narrow type para editores/lint saberem dos campos concretos
-    config: SearchAgentConfig
-    """WebSearch agent class: categorize -> search -> summarize.
+    """Agento de WebSearch: categorize -> search -> summarize (async)."""
 
-    Pipeline:
-      1) Categorize: heuristics + LLM (structured output) para escolher categorias Searx
-      2) Search: consulta SearxNG com parâmetros por categoria e política de recência
-      3) Summarize: sumariza citando apenas links da whitelist
-    """
+    config: SearchAgentConfig
 
     def __init__(self, config: SearchAgentConfig | None = None):
-        """Initialize the agent.
-
-        Args:
-            config: Configuração com modelo, Searx e parâmetros de busca.
-        """
         super().__init__()
         self.config = config or SearchAgentConfig()
 
@@ -80,21 +66,15 @@ class WebSearchAgent(AgentMixin):
         if getattr(self.config, "model", None) is None:
             self.config.model = cast(BaseChatModel, self._build_model())
 
-        # Eager build (pode trocar para lazy removendo esta linha)
+        # Eager build (troque para lazy removendo esta linha se preferir)
         self.build()
 
-    def invoke(self, state: SearchState) -> Any:
-        """Invoke the graph with the provided state."""
-        agent = self.ensure_built()
-        return agent.invoke(state)
-
-    # -----------------------------
+    # ---------------------------
     # BUILDERS
-    # -----------------------------
+    # ---------------------------
+
     def _build_model(self) -> BaseChatModel:
         """Cria o modelo via ModelFactory."""
-        assert self.config is not None
-
         model_name = self.config.model_name or ""
         if not model_name:
             raise ValueError("SearchAgentConfig.model_name must be set")
@@ -128,17 +108,19 @@ class WebSearchAgent(AgentMixin):
             AIMessage(content='{"categories":["videos"]}'),
         ]
 
-        def llm_categories(query: str, hints: list[str], limit: int) -> list[str]:
-            """Obtém categorias via LLM (structured); fallback 'general' em erro."""
+        async def llm_categories(query: str, hints: list[str], limit: int) -> list[str]:
             model_instance = getattr(self.config, "model", None)
             if not model_instance:
                 return ["general"]
             try:
                 model_struct = model_instance.with_structured_output(CategoryResponse)
                 user_msg = HumanMessage(content=f'QUERY: "{query}"\nHINTS: {json.dumps(hints, ensure_ascii=False)}')
-                resp = model_struct.invoke([SYS_PROMPT, *FEWSHOT, user_msg])
+                # prefer async; se o backend não suportar, to_thread resolve
+                try:
+                    resp = await model_struct.ainvoke([SYS_PROMPT, *FEWSHOT, user_msg])  # type: ignore[attr-defined]
+                except AttributeError:
+                    resp = await asyncio.to_thread(model_struct.invoke, [SYS_PROMPT, *FEWSHOT, user_msg])
                 cats = (getattr(resp, "categories", None) or [])
-                # Sanitiza para apenas categorias permitidas
                 cats = [c for c in cats if c in ALLOWED_CATEGORIES]
                 cats = (cats or ["general"])[: max(1, limit)]
                 return cats
@@ -146,38 +128,42 @@ class WebSearchAgent(AgentMixin):
                 logger.debug("Structured categorize failed: %r", e)
                 return ["general"]
 
-        def _categorize(state: SearchState) -> dict:
+        async def _categorize(state: SearchState) -> dict:
             t0 = time.perf_counter()
             query = state["query"]
             hints = heuristic_categories(query)
-            cats = llm_categories(query, hints, self.config.max_categories)
+            cats = await llm_categories(query, hints, self.config.max_categories)
             dt = time.perf_counter() - t0
             logger.info("[websearch] node=categorize_query dt=%.3fs cats=%s", dt, cats)
             return {"categories": cats}
 
-        return _categorize 
+        return _categorize
 
     def _build_web_search_node(self):
-        """Node de busca SearxNG com retry e pós-processamento."""
+        """Node de busca SearxNG com retry/backoff assíncrono e pós-processamento."""
         search = SearxSearchWrapper(searx_host=self.config.searx_host)
 
-        def searx_call_with_retry(call):
+        async def searx_call_with_retry(call):
             for attempt in range(self.config.retries + 1):
                 try:
-                    return call()
+                    # SearxSearchWrapper é síncrono; roda em thread
+                    return await asyncio.to_thread(call)
                 except (RequestException, JSONDecodeError, ValueError) as e:
                     if attempt >= self.config.retries:
                         raise
                     delay = self.config.backoff_base * (2 ** attempt)
-                    logger.warning("[websearch] retry=%d delay=%.2fs error=%s", attempt + 1, delay, type(e).__name__)
-                    time.sleep(delay)
+                    logger.warning(
+                        "[websearch] retry=%d delay=%.2fs error=%s", attempt + 1, delay, type(e).__name__
+                    )
+                    await asyncio.sleep(delay)
 
-        def _search(state: SearchState) -> dict:
+        async def _search(state: SearchState) -> dict:
             t0 = time.perf_counter()
             q = state["query"].strip()
             cats = state.get("categories") or ["general"]
-            if "general" not in cats:
-                cats = [*cats, "general"]
+            # Garante 'general' e remove duplicatas preservando ordem
+            seen = set()
+            cats = [c for c in ([*cats, "general"]) if not (c in seen or seen.add(c))]
 
             kwargs: dict[str, Any] = {
                 "categories": cats,
@@ -203,7 +189,7 @@ class WebSearchAgent(AgentMixin):
                 kwargs["blocked_engines"] = ",".join(sorted(block_set - allow_set))
 
             try:
-                raw = searx_call_with_retry(lambda: search.results(q, **kwargs)) or []
+                raw = await searx_call_with_retry(lambda: search.results(q, **kwargs)) or []
             except (RequestException, JSONDecodeError, ValueError) as e:
                 dt = time.perf_counter() - t0
                 logger.error("[websearch] node=web_search error=%s dt=%.3fs", type(e).__name__, dt)
@@ -211,20 +197,24 @@ class WebSearchAgent(AgentMixin):
 
             cleaned = diversify_topk(dedupe_results(normalize_urls(raw)), k=self.config.k)
             dt = time.perf_counter() - t0
-            logger.info("[websearch] node=web_search dt=%.3fs q=%r n_raw=%d n_clean=%d", dt, q, len(raw), len(cleaned))
+            logger.info(
+                "[websearch] node=web_search dt=%.3fs q=%r n_raw=%d n_clean=%d",
+                dt, q, len(raw), len(cleaned)
+            )
             return {"results": cleaned, "categories": cats}
 
         return _search
 
     def _build_summarize_node(self):
         """Node de sumarização com whitelist estrita de URLs."""
-        sys = SystemMessage(content="Be factual, concise, and objective. Always respond in the same language as the user's query.")
+        sys = SystemMessage(
+            content="Be factual, concise, and objective. Always respond in the same language as the user's query."
+        )
 
         def _strip_punct(u: str) -> str:
-            # Remove pontuação comum à direita preservando a URL base
             return u.rstrip(").,;:!?]")
 
-        def _summarize(state: SearchState) -> dict:
+        async def _summarize(state: SearchState) -> dict:
             t0 = time.perf_counter()
             query = state["query"]
             results = state.get("results") or []
@@ -255,10 +245,15 @@ class WebSearchAgent(AgentMixin):
                 logger.info("[websearch] node=summarize dt=%.3fs (fallback)", dt)
                 return {"summary": f"(Fallback without LLM)\n{top}"}
 
-            out = model_instance.invoke([sys, HumanMessage(content=prompt)])
+            # Prefer async; se não houver, executa sync no threadpool
+            try:
+                out = await model_instance.ainvoke([sys, HumanMessage(content=prompt)])  # type: ignore[attr-defined]
+            except AttributeError:
+                out = await asyncio.to_thread(model_instance.invoke, [sys, HumanMessage(content=prompt)])
+
             text = (getattr(out, "content", "") or "").strip()
 
-            # Remove URLs fora da whitelist (com canonicalização)
+            # Remoção de URLs fora da whitelist (com canonicalização)
             safe = {canonical_url(u) for u in urls}
             for token in re.findall(r"https?://\S+", text):
                 token_norm = _strip_punct(token)
@@ -300,7 +295,7 @@ class WebSearchAgent(AgentMixin):
 # ============================================================================
 
 def _create_default_agent():
-    """Create default web search agent for LangGraph server."""
+    """Cria o agente default para LangGraph server (lazy build na 1ª chamada)."""
     import os
     try:
         from dotenv import load_dotenv
@@ -322,9 +317,10 @@ def _create_default_agent():
         num_ctx=int(os.getenv("SEARCH_NUM_CTX", "8192")),
     )
     agent = WebSearchAgent(config)
+    # Retorna o grafo já compilado (AgentMixin.build foi chamado em __init__)
     return agent.agent
 
 
-# Exports for LangGraph server (referenced in langgraph.json)
+# Exports para LangGraph server (referenced in langgraph.json)
 websearch_agent = _create_default_agent()
-websearch = websearch_agent  # Backward compatibility alias
+websearch = websearch_agent  # alias retrocompatível

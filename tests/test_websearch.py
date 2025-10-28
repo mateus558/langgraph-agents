@@ -9,7 +9,7 @@ from typing import Any, cast
 
 import pytest
 
-from langchain.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
 
 
 class _MockModel:
@@ -36,9 +36,10 @@ def _reset_settings(monkeypatch):
 
 def test_websearch_basic_flow(monkeypatch):
     import src.websearch.agent as ws_mod
+    import core.contracts as contracts_mod
 
-    # Mock model
-    monkeypatch.setattr(ws_mod, "init_chat_model", lambda *a, **k: _MockModel("Summ"))
+    # Mock model via central factory used by WebSearchAgent
+    monkeypatch.setattr(contracts_mod.ModelFactory, "create_chat_model", lambda *a, **k: _MockModel("Summ"))
 
     # Mock Searx wrapper results
     class _MockSearx:
@@ -63,7 +64,7 @@ def test_websearch_basic_flow(monkeypatch):
         "summary": None,
     })
 
-    out = agent.invoke(state)
+    out = ws_mod.asyncio.run(agent.ainvoke(state))
     assert isinstance(out, dict)
     assert out.get("results") and len(out["results"]) <= 2
     assert "summary" in out
