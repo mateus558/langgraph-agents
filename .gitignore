@@ -70,6 +70,7 @@ playground/
 # Local env files
 .env
 .env.*
+!.env.example
 
 # Editor swap / temp files
 *~
