@@ -1,16 +1,20 @@
+# chatagent/agent.py
+from __future__ import annotations
+
+import asyncio
 import logging
 import time
+import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncIterator
 
-from langchain.chat_models import init_chat_model
-from langchain.messages import SystemMessage
+from langchain_core.messages import SystemMessage, AIMessage
 from langgraph.graph import END, START, StateGraph
 
 from chatagent.config import AgentState
 from chatagent.summarizer import OllamaSummarizer
 from config import get_settings
-from core.contracts import AgentMixin
+from core.contracts import AgentMixin, ModelFactory
 from utils.messages import TokenEstimator, coerce_message_content
 
 logger = logging.getLogger(__name__)
@@ -24,12 +28,15 @@ class ChatAgentConfig:
     base_url: str | None = None
     temperature: float = 0.5
     num_ctx: int = 131072
+    # allow callers to choose streaming-by-default semantics if they want
+    default_stream: bool = False
 
 
 class ChatAgent(AgentMixin):
     config: ChatAgentConfig
 
     def __init__(self, config: ChatAgentConfig | None = None):
+        super().__init__()
         self.config = config or ChatAgentConfig()
 
         # Load settings from environment if not provided in config
@@ -45,28 +52,73 @@ class ChatAgent(AgentMixin):
             k_tail=self.config.messages_to_keep,
         )
 
-        # Token counters for sliding window
-        self.token_count = 0  # tokens accumulated since last summary
-        self.last_token_count = 0  # last snapshot for logging
+        # Token estimator (pure, cheap)
         self._tokenizer = TokenEstimator()
 
-        self.agent = self._build_graph()
+        # Build lazily; callers can still opt into eager by calling .build()
+        # or you can flip to eager here if you prefer.
+        # self.build()
+
+    # ---------------------------
+    # Public API (sync/async/stream)
+    # ---------------------------
 
     def invoke(self, state: AgentState) -> Any:
-        assert self.agent
-        return self.agent.invoke(state)
+        """Sync convenience wrapper for async invoke."""
+        return asyncio.run(self.ainvoke(state))
+
+    async def ainvoke(self, state: AgentState) -> Any:
+        agent = self.ensure_built()
+        # Ensure run id and streaming flag present
+        run_id = state.get("metadata", {}).get("run_id") if state.get("metadata") else None
+        if not run_id:
+            run_id = uuid.uuid4().hex
+            meta = state.get("metadata", {})
+            meta["run_id"] = run_id
+            state["metadata"] = meta
+        if "stream" not in state:
+            state["stream"] = self.config.default_stream
+        t0 = time.perf_counter()
+        result = await agent.ainvoke(state)
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        # record structured stats
+        stats = state.get("stats", {})
+        stats["latency_ms"] = latency_ms
+        state["stats"] = stats
+        logger.info(
+            "chatagent.run_complete",
+            extra={"run_id": run_id, "latency_ms": latency_ms},
+        )
+        return result
+
+    async def astream(self, state: AgentState) -> AsyncIterator[Any]:
+        """Stream graph events/results asynchronously."""
+        agent = self.ensure_built()
+        if "stream" not in state:
+            state["stream"] = True  # force streaming for this call
+        run_id = uuid.uuid4().hex
+        meta = state.get("metadata", {})
+        meta["run_id"] = run_id
+        state["metadata"] = meta
+        async for event in agent.astream(state):
+            # you can also enrich events with run_id if desired
+            yield event
+
+    # ---------------------------
+    # Node builders (async-first)
+    # ---------------------------
 
     def _build_generate_node(self):
-        # Initialize model with config values or environment defaults
-        model_provider = "ollama" if self.config.base_url else "openai"
-        kwargs = {"num_ctx": self.config.num_ctx} if self.config.num_ctx else {}
-
-        model = init_chat_model(
-            self.config.model_name,
-            model_provider=model_provider,
-            temperature=self.config.temperature,
+        model_name = self.config.model_name or ""
+        if not model_name:
+            raise ValueError("model_name must be set ...")
+        
+        # Create model once per compiled graph via factory (provider-safe)
+        model = ModelFactory.create_chat_model(
+            model_name=model_name,
             base_url=self.config.base_url,
-            kwargs=kwargs,
+            temperature=self.config.temperature,
+            num_ctx=self.config.num_ctx,
         )
 
         sys_tmpl = (
@@ -75,58 +127,91 @@ class ChatAgent(AgentMixin):
             "Conversation Summary: {summary}\n"
         )
 
-        def _generate(state: AgentState):
+        async def _generate(state: AgentState):
+            # Observability context
+            run_id = (state.get("metadata") or {}).get("run_id", "unknown")
             msgs = state.get("messages", [])
             sys = SystemMessage(content=sys_tmpl.format(summary=state.get("summary") or ""))
 
-            # Estimate input tokens
+            # Token estimate (input)
             input_tokens = self._tokenizer.count_messages([sys, *msgs])
 
             t0 = time.perf_counter()
-            resp = model.invoke([sys, *msgs])
-            dt = time.perf_counter() - t0
+            try:
+                if state.get("stream"):
+                    chunks: list[str] = []
+                    async for chunk in model.astream([sys, *msgs]):
+                        chunks.append(coerce_message_content(chunk))
+                    out_text = "".join(chunks)
+                    resp = AIMessage(content=out_text)
+                else:
+                    resp = await model.ainvoke([sys, *msgs])
+                    out_text = coerce_message_content(resp)
+            finally:
+                dt = time.perf_counter() - t0
 
-            # Estimate output tokens
-            out_text = coerce_message_content(resp)
+            # Token estimate (output)
             output_tokens = self._tokenizer.count_text(out_text)
-
-            # Update counters
             step_total = input_tokens + output_tokens
-            self.last_token_count = step_total
-            self.token_count += step_total
+
+            # Keep stats in state (state is the source of truth)
+            stats = state.get("stats", {})
+            stats["last_step_tokens"] = step_total
+            stats["window_tokens"] = stats.get("window_tokens", 0) + step_total
+            state["stats"] = stats
 
             logger.info(
-                "Estimated tokens - input: %d, output: %d, step_total: %d, window_total: %d",
-                input_tokens,
-                output_tokens,
-                step_total,
-                self.token_count,
+                "chatagent.generate_complete",
+                extra={
+                    "run_id": run_id,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "step_total": step_total,
+                    "window_total": stats["window_tokens"],
+                    "latency_ms": dt * 1000.0,
+                },
             )
-            logger.debug("generate_model.invoke took %.3fs", dt)
 
-            # Partial update: append only the response; update history explicitly
             new_history = (state.get("history", []) + ([msgs[-1]] if msgs else []) + [resp])
             return {
                 "messages": [resp],
                 "history": new_history,
+                "stats": stats,
             }
 
         return _generate
 
     def _build_summarize_node(self):
-        def _summarize(state: AgentState):
-            result = self.summarizer.summarize(state)
-            # Reset the window after summarization
-            logger.info("Summary done. Resetting token window (prev=%d).", self.token_count)
-            self.token_count = 0
+        async def _summarize(state: AgentState):
+            run_id = (state.get("metadata") or {}).get("run_id", "unknown")
+            t0 = time.perf_counter()
+            # If summarizer is sync, offload to thread to keep event loop clean
+            result = await asyncio.to_thread(self.summarizer.summarize, state)
+            dt = time.perf_counter() - t0
+
+            # Reset window after summarization
+            stats = state.get("stats", {})
+            stats["window_tokens"] = 0
+            state["stats"] = stats
+
+            logger.info(
+                "chatagent.summary_complete",
+                extra={"run_id": run_id, "latency_ms": dt * 1000.0},
+            )
             return result
 
         return _summarize
 
     def _build_should_summarize(self):
-        def should_summarize(state: AgentState) -> dict:
-            if self.token_count >= self.config.max_tokens_before_summary:
-                logger.info("Triggering summarization due to token limit (window_total >= max).")
+        async def should_summarize(state: AgentState) -> dict:
+            stats = state.get("stats", {})
+            window = stats.get("window_tokens", 0)
+            if window >= self.config.max_tokens_before_summary:
+                logger.info(
+                    "chatagent.trigger_summarize",
+                    extra={"run_id": (state.get("metadata") or {}).get("run_id", "unknown"),
+                           "window_tokens": window},
+                )
                 return {"summarize_decision": "yes"}
             return {"summarize_decision": "no"}
 
@@ -134,11 +219,7 @@ class ChatAgent(AgentMixin):
 
     def _build_route_decision(self):
         def route_decision(state: AgentState):
-            if state["summarize_decision"] == "yes":
-                return "summarize"
-            else:
-                return END
-
+            return "summarize" if state.get("summarize_decision") == "yes" else END
         return route_decision
 
     def _build_graph(self):
@@ -155,7 +236,9 @@ class ChatAgent(AgentMixin):
         g.add_edge(START, "generate")
         g.add_edge("generate", "should_summarize")
         g.add_conditional_edges(
-            "should_summarize", self._build_route_decision(), {"summarize": "summarize", END: END}
+            "should_summarize",
+            self._build_route_decision(),
+            {"summarize": "summarize", END: END},
         )
         g.add_edge("summarize", END)
 
@@ -165,42 +248,26 @@ class ChatAgent(AgentMixin):
 # ============================================================================
 # LangGraph Server Exports
 # ============================================================================
-# These module-level exports are required for LangGraph server deployment.
-# The server discovers graphs via langgraph.json configuration.
-# Configuration is loaded from environment variables at runtime.
-# ============================================================================
-
 
 def _create_default_agent():
-    """Create default chat agent for LangGraph server.
-
-    This function is called at module import time to create the graph
-    that the LangGraph server will expose. Configuration is loaded from
-    environment variables.
-
-    Returns:
-        Compiled LangGraph graph ready for deployment.
-    """
+    """Create default chat agent for LangGraph server."""
     import os
-
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
-        pass  # dotenv not available
+        pass
 
-    # Load all configuration from environment
     config = ChatAgentConfig(
         model_name=os.getenv("MODEL_NAME") or os.getenv("CHAT_MODEL_NAME"),
         base_url=os.getenv("LLM_BASE_URL") or os.getenv("BASE_URL"),
         messages_to_keep=int(os.getenv("CHAT_MESSAGES_TO_KEEP", "5")),
         max_tokens_before_summary=int(os.getenv("CHAT_MAX_TOKENS_BEFORE_SUMMARY", "4000")),
         temperature=float(os.getenv("CHAT_TEMPERATURE", "0.5")),
-        num_ctx=int(os.getenv("CHAT_NUM_CTX", "131072")),
     )
     agent = ChatAgent(config)
-    return agent.agent
+    # keep lazy build by default; server will build on first request
+    return agent.ensure_built()
 
-
-# Export for LangGraph server (referenced in langgraph.json)
+# Export for LangGraph server
 chatagent = _create_default_agent()

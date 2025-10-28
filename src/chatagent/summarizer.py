@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 from langchain.chat_models import init_chat_model
 from langchain.messages import AnyMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import BaseMessage
 
 from chatagent.config import Summarizer
 
@@ -48,7 +49,7 @@ class BaseSummarizer(Summarizer):
 
         self.model = init_chat_model(**init_params)
 
-    def _is_user_visible(self, m: AnyMessage) -> bool:
+    def _is_user_visible(self, m: BaseMessage) -> bool:
         if isinstance(m, RemoveMessage):
             return False
         msg_type = getattr(m, "type", "").lower()
@@ -57,7 +58,7 @@ class BaseSummarizer(Summarizer):
         content = getattr(m, "content", None)
         return not (isinstance(content, str) and content.strip() == "__remove_all__")
 
-    def _render(self, m: AnyMessage) -> str:
+    def _render(self, m: BaseMessage) -> str:
         role = getattr(m, "type", m.__class__.__name__).upper()
         content = m.content if isinstance(m.content, str) else str(m.content)
         return f"{role}: {content}"
@@ -86,7 +87,7 @@ class BaseSummarizer(Summarizer):
 
     def summarize(self, state):
         summary = state.get("summary") or ""
-        msgs: Sequence[AnyMessage] = state.get("messages", [])
+        msgs: Sequence[BaseMessage] = state.get("messages", [])
         visible = [m for m in msgs if self._is_user_visible(m)]
         messages_text = "\n".join(self._render(m) for m in visible)
 

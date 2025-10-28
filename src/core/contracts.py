@@ -1,3 +1,7 @@
+# core/contracts.py
+from __future__ import annotations
+
+import threading
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -7,153 +11,132 @@ from langchain_core.language_models import BaseChatModel
 from config import get_settings
 
 
+# ---------------------------
+# Prompt / Agent Protocols
+# ---------------------------
+
 class PromptProtocol(Protocol):
     """Protocol for prompt interface compatibility."""
-
     prompt: str
 
     def format(self, **kwargs: Any) -> str:
-        """Format the prompt with given keyword arguments.
-
-        Args:
-            **kwargs: Keyword arguments for formatting.
-
-        Returns:
-            Formatted prompt string.
-        """
         ...
 
 
 class AgentProtocol(Protocol):
-    """Protocol for agent interface compatibility.
-
-    This protocol now exposes a few optional default attributes and a small
-    lifecycle API so callers can build and query graphs in a uniform way.
-    Implementors may mix in `BaseAgent` to get default implementations.
-    """
-
-    # Default properties commonly present on agents
+    """Protocol for agent interface compatibility."""
     config: "AgentConfig | None"
-    # `agent` is a convenience property that implementations may use to point
-    # to the compiled/ready-to-invoke graph instance. It may be None until
-    # build() is called.
-    agent: "Any"
+    agent: Any  # compiled/ready graph
 
-    def invoke(self, state: Any) -> Any:
-        """Invoke the agent with a state.
+    def invoke(self, state: Any) -> Any: ...
+    def _build_graph(self) -> Any: ...
+    def build(self) -> Any: ...
+    def get_graph(self) -> Any: ...
+    def get_mermaid(self) -> str: ...
 
-        Args:
-            state: The input state for the agent.
 
-        Returns:
-            The output state from the agent.
-        """
-        ...
+# ---------------------------
+# Model Factory (Provider Abstraction)
+# ---------------------------
 
-    def _build_graph(self) -> Any:
-        """Build and return the agent's graph.
+class ModelFactory:
+    """Small factory to create chat models while isolating provider quirks."""
 
-        Implementations must provide this. The BaseAgent mixin will call
-        this method when performing build().
-        """
-        ...
+    @staticmethod
+    def create_chat_model(
+        model_name: str,
+        base_url: str | None = None,
+        *,
+        temperature: float | None = None,
+        num_ctx: int | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> BaseChatModel:
+        provider = "ollama" if base_url else "openai"
 
-    def build(self) -> Any:
-        """Build or ensure the agent's graph is compiled and ready.
+        kwargs: dict[str, Any] = {}
+        if temperature is not None:
+            kwargs["temperature"] = temperature
 
-        Returns:
-            The agent instance (self) for convenience/chaining.
-        """
-        ...
+        # Only Ollama understands num_ctx; do not leak to OpenAI.
+        if provider == "ollama" and num_ctx:
+            kwargs["num_ctx"] = num_ctx
 
-    def get_graph(self) -> Any:
-        """Return the compiled graph instance.
+        if extra:
+            kwargs.update(extra)
 
-        Raises:
-            RuntimeError: if the graph has not been built yet.
-        """
-        ...
+        return init_chat_model(
+            model=model_name,
+            model_provider=provider,
+            base_url=base_url,
+            **kwargs,  # NOTE: not "kwargs=kwargs"
+        )
 
-    def get_mermaid(self) -> str:
-        """Return a Mermaid diagram for the compiled graph.
 
-        Implementations should raise if the graph is not built.
-        """
-        ...
-
+# ---------------------------
+# Agent Config
+# ---------------------------
 
 @dataclass
 class AgentConfig:
-    """Base configuration for agents.
-
-    Attributes:
-        model_name: Identifier for the chat model.
-        base_url: Base URL for the model provider (None for default cloud providers).
-        embeddings_model: Identifier for the embeddings model.
-        model: Initialized chat model instance.
-    """
-
-    # Defaults are pulled from src/config.py if not provided explicitly
     model_name: str | None = None
     base_url: str | None = None
     embeddings_model: str | None = None
     num_ctx: int | None = None
-    model: BaseChatModel | None = None  # Will be initialized in __post_init__
     temperature: float | None = None
+    model: BaseChatModel | None = None
 
     def __post_init__(self) -> None:
-        """Initialize model and load defaults from config."""
-        # Load defaults from config for any unset fields
         settings = get_settings()
-        if self.model_name is None:
-            self.model_name = settings.model_name
-        if self.base_url is None:
-            # settings.base_url can be None (meaning use provider default)
-            self.base_url = settings.base_url
-        if self.embeddings_model is None:
-            self.embeddings_model = settings.embeddings_model
+        self.model_name = self.model_name or settings.model_name
+        self.base_url = self.base_url if self.base_url is not None else settings.base_url
+        self.embeddings_model = self.embeddings_model or settings.embeddings_model
 
-        # Initialize the chat model using provider based on base_url presence
-        if self.base_url is not None:
-            # When base_url is provided, assume Ollama-compatible endpoint
-            self.model = init_chat_model(
-                model=self.model_name,
-                model_provider="ollama",
-                base_url=self.base_url,
-            )
-        else:
-            # Without base_url, use OpenAI (or default cloud provider)
-            self.model = init_chat_model(
-                model=self.model_name,
-                model_provider="openai",
-            )
+        # --- narrow to non-optional for the factory call ---
+        model_name: str = self.model_name  # type: ignore[assignment]
+        if model_name is None:
+            raise ValueError("model_name must be set in settings or AgentConfig")
 
+        self.model = ModelFactory.create_chat_model(
+            model_name=model_name,
+            base_url=self.base_url,
+            temperature=self.temperature,
+            num_ctx=self.num_ctx,
+        )
+
+
+# ---------------------------
+# Agent Mixin (thread-safe, lazy/eager)
+# ---------------------------
 
 class AgentMixin:
-    """Simple mixin providing default build/get_graph/get_mermaid behavior.
-
-    Intended to be used as a mixin for concrete agents. It expects the
-    concrete class to implement `_build_graph()` which returns the compiled
-    graph object (LangGraph compiled graph). The mixin uses the attribute
-    `graph` on the instance when present and will set it when building.
-    """
-
+    """Default build/get_graph/get_mermaid with thread-safe build."""
     config: Any
     agent: Any
 
+    def __init__(self, *args, **kwargs) -> None:
+        # Subclasses may override __init__; call super().__init__ if they do.
+        self.agent = None
+        self._build_lock = threading.Lock()
+
     def _build_graph(self) -> Any:
-        """Concrete agents must implement this method to return a compiled graph."""
         raise NotImplementedError
 
-    def build(self) -> Any:
-        # If a compiled graph already exists on the instance, keep it.
-        if getattr(self, "graph", None) is None:
-            self.graph = self._build_graph()
-
+    def build(self, force: bool = False):
+        if self.agent is not None and not force:
+            return self
+        with self._build_lock:
+            if self.agent is None or force:
+                compiled = self._build_graph()
+                self.agent = compiled
         return self
 
+    def ensure_built(self):
+        if self.agent is None:
+            self.build()
+        return self.agent
+
     def get_graph(self) -> Any:
-        g = getattr(self, "graph", None)
+        g = self.agent
         if g is None:
             raise RuntimeError("Agent graph is not built. Call build() first.")
         return g
@@ -162,5 +145,5 @@ class AgentMixin:
         g = self.get_graph()
         try:
             return str(g.get_graph().draw_mermaid())
-        except Exception as e:  # pragma: no cover - wrapper around drawing failure
+        except Exception as e:  # pragma: no cover
             raise RuntimeError(f"Failed to draw mermaid diagram: {e}") from e
