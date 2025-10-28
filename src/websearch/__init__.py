@@ -14,7 +14,7 @@ Example:
         model_name="llama3.1",
     )
     agent = WebSearchAgent(config)
-    
+
     result = agent.invoke({
         "query": "latest Python news",
         "messages": [],
@@ -24,7 +24,7 @@ Example:
     })
 """
 
-from .agent import WebSearchAgent, AgentProtocol
+from .agent import AgentProtocol, WebSearchAgent
 from .config import SearchAgentConfig, SearchState
 from .constants import ALLOWED_CATEGORIES
 

@@ -1,11 +1,11 @@
-from typing_extensions import Annotated, Protocol, TypedDict
-from langgraph.graph.message import add_messages
+from typing import Protocol, TypedDict
+
 from langchain.messages import AnyMessage
 
 
 class AgentState(TypedDict):
-    # Reducer to apply appends/removals
-    messages: Annotated[list[AnyMessage], add_messages]
+    # Messages returned by nodes; downstream merges overwrite previous by default
+    messages: list[AnyMessage]
     # 'history' doesn't need a reducer if you always rewrite
     history: list[AnyMessage]
     summary: str | None

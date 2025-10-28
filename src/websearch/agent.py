@@ -15,32 +15,30 @@ Key improvements vs. previous version:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
-from json import JSONDecodeError
 import json
 import logging
 import re
 import time
-
-from requests import RequestException
-from langgraph.graph import StateGraph, START, END
-from langgraph.types import CachePolicy
+from json import JSONDecodeError
+from typing import Any, cast
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-
 from langchain_community.utilities import SearxSearchWrapper
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import CachePolicy
+from requests import RequestException
 
 from core.contracts import AgentProtocol
-
 from websearch.config import SearchAgentConfig, SearchState
 from websearch.constants import ALLOWED_CATEGORIES
-from websearch.heuristics import heuristic_categories, CategoryResponse
+from websearch.heuristics import CategoryResponse, heuristic_categories
 from websearch.utils import (
+    canonical_url,
     dedupe_results,
     diversify_topk,
     normalize_urls,
-    canonical_url,
     pick_time_range,
 )
 
@@ -88,7 +86,7 @@ class WebSearchAgent(AgentProtocol):
         self.config = config or SearchAgentConfig()
         # Ensure a model exists if it is not provided in the configuration
         if getattr(self.config, "model", None) is None:
-            self.config.model = self._build_model()  # type: ignore[assignment]
+            self.config.model = cast(BaseChatModel, self._build_model())
         self.graph = self._build_graph()
 
     def invoke(self, state: SearchState) -> Any:
@@ -98,7 +96,7 @@ class WebSearchAgent(AgentProtocol):
     def get_mermaid(self) -> str:
         """Return a Mermaid diagram of the graph."""
         try:
-            return self.graph.get_graph().draw_mermaid()
+            return str(self.graph.get_graph().draw_mermaid())
         except Exception:
             # Simple fallback to avoid failures if the API changes
             return "graph TD\n  START --> categorize_query --> web_search --> summarize --> END"
@@ -145,15 +143,16 @@ class WebSearchAgent(AgentProtocol):
             AIMessage(content='{"categories":["videos"]}'),
         ]
 
-        def llm_categories(query: str, hints: List[str], limit: int) -> List[str]:
+        def llm_categories(query: str, hints: list[str], limit: int) -> list[str]:
             """Get categories via LLM (structured output); fallback to 'general' on error."""
-            if not getattr(self.config, "model", None):
+            model_instance = getattr(self.config, "model", None)
+            if not model_instance:
                 return ["general"]
             try:
-                model_struct = self.config.model.with_structured_output(CategoryResponse)  # type: ignore
+                model_struct = model_instance.with_structured_output(CategoryResponse)
                 user_msg = HumanMessage(content=f'QUERY: "{query}"\nHINTS: {json.dumps(hints, ensure_ascii=False)}')
-                resp: CategoryResponse = model_struct.invoke([SYS_PROMPT, *FEWSHOT, user_msg])  # type: ignore
-                cats = (resp.categories or [])
+                resp = model_struct.invoke([SYS_PROMPT, *FEWSHOT, user_msg])
+                cats = (getattr(resp, "categories", None) or [])
                 # Sanitize to only allowed categories
                 cats = [c for c in cats if c in ALLOWED_CATEGORIES]
                 cats = (cats or ["general"])[: max(1, limit)]
@@ -195,7 +194,7 @@ class WebSearchAgent(AgentProtocol):
             if "general" not in cats:
                 cats = [*cats, "general"]
 
-            kwargs: Dict[str, Any] = {
+            kwargs: dict[str, Any] = {
                 "categories": cats,
                 "num_results": self.config.k * 2,
                 "safesearch": self.config.safesearch,
@@ -207,12 +206,11 @@ class WebSearchAgent(AgentProtocol):
 
             # Unify allow/block from all categories
             allow_set, block_set = set(), set()
-            if getattr(self.config, "engines_allow", None):
-                for c in cats:
-                    allow_set |= set(self.config.engines_allow.get(c, []))  # type: ignore
-            if getattr(self.config, "engines_block", None):
-                for c in cats:
-                    block_set |= set(self.config.engines_block.get(c, []))  # type: ignore
+            eng_allow = getattr(self.config, "engines_allow", None) or {}
+            eng_block = getattr(self.config, "engines_block", None) or {}
+            for c in cats:
+                allow_set |= set(eng_allow.get(c, []))
+                block_set |= set(eng_block.get(c, []))
             if allow_set:
                 kwargs["engines"] = ",".join(sorted(allow_set))
             if block_set:
@@ -251,7 +249,7 @@ class WebSearchAgent(AgentProtocol):
                 logger.info("[websearch] node=summarize dt=%.3fs (no results)", time.perf_counter() - t0)
                 return {"summary": f"No results found for: {query}"}
 
-            urls = [r.get("link", "") for r in results if r.get("link")]
+            urls = [str(r.get("link", "")) for r in results if isinstance(r.get("link"), str)]
             lines = [
                 f"{i+1}. {r.get('title', '')} — {r.get('link', '')}\n{r.get('snippet', '')}"
                 for i, r in enumerate(results)
@@ -265,12 +263,13 @@ class WebSearchAgent(AgentProtocol):
                 f"Query: {query}\n\nResults:\n" + "\n".join(lines)
             )
 
-            if not getattr(self.config, "model", None):
+            model_instance = getattr(self.config, "model", None)
+            if not model_instance:
                 top = "\n".join(lines[:3])
                 logger.info("[websearch] node=summarize dt=%.3fs (fallback)", time.perf_counter() - t0)
                 return {"summary": f"(Fallback without LLM)\n{top}"}
 
-            out = self.config.model.invoke([sys, HumanMessage(content=prompt)])  # type: ignore
+            out = model_instance.invoke([sys, HumanMessage(content=prompt)])
             text = (getattr(out, "content", "") or "").strip()
 
             # Remove any URL that is not in whitelist (with canonicalization)
@@ -320,22 +319,22 @@ class WebSearchAgent(AgentProtocol):
 
 def _create_default_agent():
     """Create default web search agent for LangGraph server.
-    
+
     This function is called at module import time to create the graph
     that the LangGraph server will expose. Configuration is loaded from
     environment variables.
-    
+
     Returns:
         Compiled LangGraph graph ready for deployment.
     """
     import os
-    
+
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass  # dotenv not available
-    
+
     # Load all configuration from environment
     config = SearchAgentConfig(
         model_name=os.getenv("MODEL_NAME") or os.getenv("WEBSEARCH_MODEL_NAME", "llama3.1"),

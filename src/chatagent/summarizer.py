@@ -1,9 +1,10 @@
 # summarizers.py
-import time
 import logging
-from typing import Sequence
+import time
+from collections.abc import Sequence
+
 from langchain.chat_models import init_chat_model
-from langchain.messages import AnyMessage, RemoveMessage
+from langchain.messages import AnyMessage, HumanMessage, RemoveMessage
 
 from chatagent.config import Summarizer
 
@@ -93,11 +94,12 @@ class BaseSummarizer(Summarizer):
 
         logger.debug("Summarization prompt: %s", prompt)
         t0 = time.perf_counter()
-        resp = self.model.invoke(prompt)  # type: ignore[arg-type]
+        resp = self.model.invoke([HumanMessage(content=prompt)])
         dt = time.perf_counter() - t0
         logger.info("Summarization invoke took %.3fs", dt)
 
-        new_summary = resp.content if isinstance(getattr(resp, "content", None), str) else str(getattr(resp, "content", resp))
+        content = getattr(resp, "content", None)
+        new_summary = content if isinstance(content, str) else str(content)
         logger.debug("New summary: %s", new_summary)
 
         tail = list(msgs[-self.k_tail:]) if self.k_tail > 0 else []

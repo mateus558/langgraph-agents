@@ -1,18 +1,20 @@
-from typing_extensions import Any
-import time
 import logging
+import time
 from dataclasses import dataclass
-from langchain.chat_models import init_chat_model
-from langchain.messages import HumanMessage, SystemMessage, AIMessage
-from langgraph.graph import StateGraph, START, END
+from typing import Any
 
-from core.contracts import AgentProtocol
-from chatagent.summarizer import OllamaSummarizer
+from langchain.chat_models import init_chat_model
+from langchain.messages import SystemMessage
+from langgraph.graph import END, START, StateGraph
+
 from chatagent.config import AgentState
-from utils.messages import TokenEstimator, coerce_message_content
+from chatagent.summarizer import OllamaSummarizer
 from config import get_settings
+from core.contracts import AgentProtocol
+from utils.messages import TokenEstimator, coerce_message_content
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class AgentConfig:
@@ -23,10 +25,11 @@ class AgentConfig:
     temperature: float = 0.5
     num_ctx: int = 131072
 
+
 class ChatAgent(AgentProtocol):
     def __init__(self, config: AgentConfig | None = None):
         self.config = config or AgentConfig()
-        
+
         # Load settings from environment if not provided in config
         settings = get_settings()
         if self.config.model_name is None:
@@ -35,14 +38,14 @@ class ChatAgent(AgentProtocol):
             self.config.base_url = settings.base_url
 
         self.summarizer = OllamaSummarizer(
-            model_id=self.config.model_name or "llama3.1",  # type: ignore[arg-type]
-            base_url=self.config.base_url,  # type: ignore[arg-type]
-            k_tail=self.config.messages_to_keep
+            model_id=self.config.model_name or get_settings().model_name,
+            base_url=self.config.base_url,
+            k_tail=self.config.messages_to_keep,
         )
 
         # Token counters for sliding window
-        self.token_count = 0          # tokens accumulated since last summary
-        self.last_token_count = 0     # last snapshot for logging
+        self.token_count = 0  # tokens accumulated since last summary
+        self.last_token_count = 0  # last snapshot for logging
         self._tokenizer = TokenEstimator()
 
         self.graph = self._build_graph()
@@ -51,13 +54,13 @@ class ChatAgent(AgentProtocol):
         return self.graph.invoke(state)
 
     def get_mermaid(self) -> str:
-        return self.graph.get_graph().draw_mermaid()
+        return str(self.graph.get_graph().draw_mermaid())
 
     def _build_generate_node(self):
         # Initialize model with config values or environment defaults
         model_provider = "ollama" if self.config.base_url else "openai"
         kwargs = {"num_ctx": self.config.num_ctx} if self.config.num_ctx else {}
-        
+
         model = init_chat_model(
             self.config.model_name,
             model_provider=model_provider,
@@ -94,7 +97,10 @@ class ChatAgent(AgentProtocol):
 
             logger.info(
                 "Estimated tokens - input: %d, output: %d, step_total: %d, window_total: %d",
-                input_tokens, output_tokens, step_total, self.token_count
+                input_tokens,
+                output_tokens,
+                step_total,
+                self.token_count,
             )
             logger.debug("generate_model.invoke took %.3fs", dt)
 
@@ -114,6 +120,7 @@ class ChatAgent(AgentProtocol):
             logger.info("Summary done. Resetting token window (prev=%d).", self.token_count)
             self.token_count = 0
             return result
+
         return _summarize
 
     def _build_should_summarize(self):
@@ -122,6 +129,7 @@ class ChatAgent(AgentProtocol):
                 logger.info("Triggering summarization due to token limit (window_total >= max).")
                 return {"summarize_decision": "yes"}
             return {"summarize_decision": "no"}
+
         return should_summarize
 
     def _build_route_decision(self):
@@ -130,6 +138,7 @@ class ChatAgent(AgentProtocol):
                 return "summarize"
             else:
                 return END
+
         return route_decision
 
     def _build_graph(self):
@@ -145,7 +154,9 @@ class ChatAgent(AgentProtocol):
 
         g.add_edge(START, "generate")
         g.add_edge("generate", "should_summarize")
-        g.add_conditional_edges("should_summarize", self._build_route_decision(), {"summarize": "summarize", END: END})
+        g.add_conditional_edges(
+            "should_summarize", self._build_route_decision(), {"summarize": "summarize", END: END}
+        )
         g.add_edge("summarize", END)
 
         return g.compile()
@@ -159,24 +170,25 @@ class ChatAgent(AgentProtocol):
 # Configuration is loaded from environment variables at runtime.
 # ============================================================================
 
+
 def _create_default_agent():
     """Create default chat agent for LangGraph server.
-    
+
     This function is called at module import time to create the graph
     that the LangGraph server will expose. Configuration is loaded from
     environment variables.
-    
+
     Returns:
         Compiled LangGraph graph ready for deployment.
     """
     import os
-    
+
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass  # dotenv not available
-    
+
     # Load all configuration from environment
     config = AgentConfig(
         model_name=os.getenv("MODEL_NAME") or os.getenv("CHAT_MODEL_NAME"),

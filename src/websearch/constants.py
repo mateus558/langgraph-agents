@@ -4,10 +4,10 @@ This module defines allowed categories and pattern matching rules for
 categorizing search queries using heuristics.
 """
 
-from typing import Iterable, List, Tuple
+from collections.abc import Iterable
 
 # Supported categories (adjust according to your instance)
-ALLOWED_CATEGORIES: Tuple[str, ...] = (
+ALLOWED_CATEGORIES: tuple[str, ...] = (
     "general", "news", "images", "videos", "map", "music", "files",
     "it", "science", "social media", "shopping", "qa", "apps",
     "economics", "sports", "education"
@@ -17,7 +17,7 @@ ALLOWED_CATEGORIES: Tuple[str, ...] = (
 # Deterministic heuristic (HINT ONLY)
 # Format: (pattern, categories, score_weight)
 # ---------------------------
-HEURISTIC_PATTERNS: List[Tuple[str, Iterable[str], int]] = [
+HEURISTIC_PATTERNS: list[tuple[str, Iterable[str], int]] = [
     (r"\b(news|breaking|latest|today|now|headlines?|headline|election|leak)\b", ["news"], 3),
     (r"\b(image|wallpaper|photo|photos?|png|jpg|jpeg|logo|icon|sprite)\b", ["images"], 3),
     (r"\b(video|trailer|watch|youtube|mp4|mkv)\b", ["videos"], 3),

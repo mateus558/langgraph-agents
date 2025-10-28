@@ -1,7 +1,9 @@
-from typing import Any, Optional, Protocol
 from dataclasses import dataclass
-from langchain_core.language_models import BaseChatModel
+from typing import Any, Protocol
+
 from langchain.chat_models import init_chat_model
+from langchain_core.language_models import BaseChatModel
+
 from config import get_settings
 
 
@@ -57,10 +59,10 @@ class AgentConfig:
     """
 
     # Defaults are pulled from src/config.py if not provided explicitly
-    model_name: Optional[str] = None
-    base_url: Optional[str] = None
-    embeddings_model: Optional[str] = None
-    model: Optional[BaseChatModel] = None  # Will be initialized in __post_init__
+    model_name: str | None = None
+    base_url: str | None = None
+    embeddings_model: str | None = None
+    model: BaseChatModel | None = None  # Will be initialized in __post_init__
 
     def __post_init__(self) -> None:
         """Initialize model and load defaults from config."""
@@ -77,14 +79,16 @@ class AgentConfig:
         # Initialize the chat model using provider based on base_url presence
         if self.base_url is not None:
             # When base_url is provided, assume Ollama-compatible endpoint
+            assert self.model_name is not None
             self.model = init_chat_model(
-                model=self.model_name,  # type: ignore[arg-type]
+                model=self.model_name,
                 model_provider="ollama",
                 base_url=self.base_url,
             )
         else:
             # Without base_url, use OpenAI (or default cloud provider)
+            assert self.model_name is not None
             self.model = init_chat_model(
-                model=self.model_name,  # type: ignore[arg-type]
+                model=self.model_name,
                 model_provider="openai",
             )

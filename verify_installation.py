@@ -79,8 +79,6 @@ def check_project_structure():
         "src/__init__.py",
         "src/config.py",
         "src/core/contracts.py",
-        "src/core/exceptions.py",
-        "src/core/validation.py",
         "src/chatagent/agent.py",
         "src/websearch/agent.py",
         "src/utils/messages.py",

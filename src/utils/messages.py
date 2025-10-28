@@ -2,11 +2,10 @@
 
 This module contains portable helpers used by multiple agents.
 """
-from typing import Any, Iterable
 import math
 import re
-from langchain.messages import AnyMessage
-
+from collections.abc import Iterable
+from typing import Any
 
 
 class TokenEstimator:
@@ -19,7 +18,7 @@ class TokenEstimator:
         self._mode = "heuristic"
         self._enc = None
         try:
-            import tiktoken  # type: ignore
+            import tiktoken
             self._enc = tiktoken.get_encoding("cl100k_base")
             self._mode = "tiktoken"
         except Exception:

@@ -1,23 +1,25 @@
-# websearch_tool.py
+"""LangChain tool wrapper around the WebSearch agent."""
+
 from __future__ import annotations
 
 import os
-from typing import Optional, Tuple, Any, Dict, List
 import random
 from threading import RLock
+from typing import Any
 
+from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain.chat_models import init_chat_model
 
 # Import from the new websearch package
-from . import WebSearchAgent
 from websearch.config import SearchAgentConfig
+
+from . import WebSearchAgent
 
 # --------------------------------------------------------------------
 # Singleton thread-safe cache per k
 # --------------------------------------------------------------------
-_AGENTS: Dict[int, WebSearchAgent] = {}
+_AGENTS: dict[int, WebSearchAgent] = {}
 _LOCK = RLock()
 
 # Default values - can be overridden by environment variables
@@ -89,9 +91,9 @@ def _get_agent(
     response_format="content_and_artifact",
 )  # use return_direct=True if you want to end the conversation
 def websearch(
-    queries: Optional[List[str]] = None,
-    top_k: Optional[int] = None,
-) -> Tuple[str, dict]:
+    queries: list[str] | None = None,
+    top_k: int | None = None,
+) -> tuple[str, dict]:
     """Search the web and return a concise, source-backed summary.
 
     Features:
@@ -103,22 +105,21 @@ def websearch(
         artifact: Dictionary with metadata (categories per query, merged results, sampled results, etc.).
 
     Args:
-        queries: Multiple queries to run in parallel (batch). 
+        queries: Multiple queries to run in parallel (batch).
         top_k: Final number of results to summarize. Defaults to 8.
     """
     try:
         k = int(top_k) if top_k is not None else DEFAULT_K
         # Build the batch of queries
-        qlist: List[str] = []
+        qlist: list[str] = []
         if queries and isinstance(queries, list):
             qlist = [q for q in (q.strip() for q in queries) if q]
-        
+
         if not qlist:
             return (
                 "No query provided.",
                 {"error": "missing_query", "queries": queries, "k": k},
             )
-
         agent = _get_agent(k=k)
 
         # Prepare input states for batch invocation
@@ -133,17 +134,19 @@ def websearch(
         ]
 
         # Run in batch if supported, else sequential
-        if hasattr(agent.graph, "batch") and callable(getattr(agent.graph, "batch")):
-            states = agent.graph.batch(inputs)  # type: ignore[attr-defined, call-arg]
+        graph: Any = agent.graph
+        if hasattr(graph, "batch") and callable(graph.batch):
+            from typing import cast as _cast
+            states = _cast(list[Any], graph.batch(inputs))
         else:
-            states = [agent.graph.invoke(inp) for inp in inputs]  # type: ignore[arg-type]
+            states = [graph.invoke(inp) for inp in inputs]
 
         # Collect and deduplicate results
-        merged_results: List[Dict[str, Any]] = []
+        merged_results: list[dict[str, Any]] = []
         seen: set[str] = set()
-        categories_per_query: Dict[str, Any] = {}
+        categories_per_query: dict[str, Any] = {}
 
-        def _result_key(item: Dict[str, Any]) -> str:
+        def _result_key(item: dict[str, Any]) -> str:
             url = (item.get("url") or "").strip()
             if url:
                 return url
@@ -152,7 +155,7 @@ def websearch(
             snip = (item.get("snippet") or "").strip()
             return f"{title}|{snip}"
 
-        for q, st in zip(qlist, states):
+        for q, st in zip(qlist, states, strict=False):
             categories_per_query[q] = st.get("categories")
             res = st.get("results") or []
             if isinstance(res, list):
@@ -208,7 +211,7 @@ def websearch(
         ]
         prompt = qlabel + "Results (sampled):\n" + "\n".join(lines)
 
-        out = model.invoke([sys, HumanMessage(content=prompt)])  # type: ignore
+        out = model.invoke([sys, HumanMessage(content=prompt)])
         summary = (getattr(out, "content", "") or "").strip()
 
         if not summary:

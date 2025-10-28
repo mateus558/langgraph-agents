@@ -5,17 +5,18 @@ used throughout the WebSearch agent.
 """
 
 from __future__ import annotations
-from typing_extensions import TypedDict, List, Dict, Any
+
 import os
 from dataclasses import dataclass
+
+from typing_extensions import TypedDict
+
 from core.contracts import AgentConfig
-
-
 
 
 class SearchState(TypedDict):
     """State for the WebSearch agent graph.
-    
+
     Attributes:
         messages: List of messages exchanged during the search process.
         query: The search query string.
@@ -24,15 +25,15 @@ class SearchState(TypedDict):
         summary: Final LLM-generated summary of the search results.
     """
     query: str
-    categories: List[str] | None
-    results: List[Dict[str, Any]] | None
+    categories: list[str] | None
+    results: list[dict[str, object]] | None
     summary: str | None
 
 
 @dataclass
 class SearchAgentConfig(AgentConfig):
     """Configuration for WebSearch agent.
-    
+
     Attributes:
         searx_host: SearxNG instance URL.
         k: Number of final results to return.
@@ -49,7 +50,7 @@ class SearchAgentConfig(AgentConfig):
         engines_allow: Per-category engine allowlist (optional).
         engines_block: Per-category engine blocklist (optional).
     """
-    searx_host: str = "http://192.168.30.100:8095"
+    searx_host: str = "http://localhost:8095"
     k: int = 8
     temperature: float = 0.2
     num_ctx: int = 8192

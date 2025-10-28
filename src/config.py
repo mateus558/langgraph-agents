@@ -23,8 +23,8 @@ Note:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(slots=True)
@@ -34,7 +34,7 @@ class Settings:
     embeddings_model: str = "nomic-embed-text"
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         # Avoid referencing class attributes directly when slots=True; use an instance
         defaults = cls()
         model_name = os.getenv("MODEL_NAME", defaults.model_name)
