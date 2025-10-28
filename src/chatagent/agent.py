@@ -4,12 +4,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-import uuid
 from dataclasses import dataclass
-from typing import Any, AsyncIterator
 
 from langchain_core.messages import SystemMessage, AIMessage
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import CachePolicy
+from langgraph.cache.memory import InMemoryCache
 
 from chatagent.config import AgentState
 from chatagent.summarizer import OllamaSummarizer
@@ -189,8 +189,8 @@ class ChatAgent(AgentMixin):
         sum_ = self._build_summarize_node()
         should_summarize = self._build_should_summarize()
 
-        g.add_node("generate", gen)
-        g.add_node("summarize", sum_)
+        g.add_node("generate", gen, cache_policy=CachePolicy(ttl=200))
+        g.add_node("summarize", sum_, cache_policy=CachePolicy(ttl=200))
         g.add_node("should_summarize", should_summarize)
 
         g.add_edge(START, "generate")
@@ -202,7 +202,9 @@ class ChatAgent(AgentMixin):
         )
         g.add_edge("summarize", END)
 
-        return g.compile()
+        cache_backend = InMemoryCache()
+
+        return g.compile(name="ChatAgent", cache=cache_backend)
 
 
 # ============================================================================

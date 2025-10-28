@@ -27,6 +27,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import CachePolicy
+from langgraph.cache.memory import InMemoryCache
 from requests import RequestException
 
 from core.contracts import AgentMixin, ModelFactory
@@ -285,9 +286,10 @@ class WebSearchAgent(AgentMixin):
         g.add_edge("categorize_query", "web_search")
         g.add_edge("web_search", "summarize")
         g.add_edge("summarize", END)
+        
+        cache_backend = InMemoryCache()
 
-        return g.compile(name="WebSearchAgent")
-
+        return g.compile(name="WebSearchAgent", cache=cache_backend)
 
 # ============================================================================
 # LangGraph Server Exports
