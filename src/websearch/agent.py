@@ -309,7 +309,50 @@ class WebSearchAgent(AgentProtocol):
         return g.compile(name="WebSearchAgent")
 
 
-# Exports úteis para quem importa o módulo
-config = SearchAgentConfig()
-websearch_agent = WebSearchAgent(config)
-websearch = websearch_agent.graph  # compat: grafo compilado
+# ============================================================================
+# LangGraph Server Exports
+# ============================================================================
+# These module-level exports are required for LangGraph server deployment.
+# The server discovers graphs via langgraph.json configuration.
+# Configuration is loaded from environment variables at runtime.
+# ============================================================================
+
+def _create_default_agent():
+    """Create default web search agent for LangGraph server.
+    
+    This function is called at module import time to create the graph
+    that the LangGraph server will expose. Configuration is loaded from
+    environment variables.
+    
+    Returns:
+        Compiled LangGraph graph ready for deployment.
+    """
+    import os
+    
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass  # dotenv not available
+    
+    # Load all configuration from environment
+    config = SearchAgentConfig(
+        model_name=os.getenv("MODEL_NAME") or os.getenv("WEBSEARCH_MODEL_NAME", "llama3.1"),
+        base_url=os.getenv("LLM_BASE_URL") or os.getenv("BASE_URL"),
+        searx_host=os.getenv("SEARX_HOST", "http://localhost:8095"),
+        k=int(os.getenv("SEARCH_K", "8")),
+        max_categories=int(os.getenv("SEARCH_MAX_CATEGORIES", "3")),
+        safesearch=int(os.getenv("SEARCH_SAFESEARCH", "1")),
+        lang=os.getenv("SEARCH_LANG", "en"),
+        retries=int(os.getenv("SEARCH_RETRIES", "2")),
+        backoff_base=float(os.getenv("SEARCH_BACKOFF_BASE", "1.0")),
+        temperature=float(os.getenv("SEARCH_TEMPERATURE", "0.5")),
+        num_ctx=int(os.getenv("SEARCH_NUM_CTX", "8192")),
+    )
+    agent = WebSearchAgent(config)
+    return agent.graph
+
+
+# Exports for LangGraph server (referenced in langgraph.json)
+websearch_agent = _create_default_agent()
+websearch = websearch_agent  # Backward compatibility alias

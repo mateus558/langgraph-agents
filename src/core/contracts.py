@@ -7,33 +7,63 @@ from config import get_settings
 
 class PromptProtocol(Protocol):
     """Protocol for prompt interface compatibility."""
+
     prompt: str
 
     def format(self, **kwargs: Any) -> str:
-        """Format the prompt with given keyword arguments."""
+        """Format the prompt with given keyword arguments.
+
+        Args:
+            **kwargs: Keyword arguments for formatting.
+
+        Returns:
+            Formatted prompt string.
+        """
         ...
+
 
 class AgentProtocol(Protocol):
     """Protocol for agent interface compatibility."""
-    
+
     def invoke(self, state: Any) -> Any:
-        """Invoke the agent with a state."""
+        """Invoke the agent with a state.
+
+        Args:
+            state: The input state for the agent.
+
+        Returns:
+            The output state from the agent.
+        """
         ...
 
     def _build_graph(self) -> Any:
-        """Build and return the agent's graph."""
+        """Build and return the agent's graph.
+
+        Returns:
+            The compiled agent graph.
+        """
         ...
 
 
 @dataclass
 class AgentConfig:
+    """Base configuration for agents.
+
+    Attributes:
+        model_name: Identifier for the chat model.
+        base_url: Base URL for the model provider (None for default cloud providers).
+        embeddings_model: Identifier for the embeddings model.
+        model: Initialized chat model instance.
+    """
+
     # Defaults are pulled from src/config.py if not provided explicitly
     model_name: Optional[str] = None
     base_url: Optional[str] = None
     embeddings_model: Optional[str] = None
-    model: Optional[BaseChatModel] = None  # inicialização será feita no __post_init__
+    model: Optional[BaseChatModel] = None  # Will be initialized in __post_init__
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Initialize model and load defaults from config."""
         # Load defaults from config for any unset fields
         settings = get_settings()
         if self.model_name is None:

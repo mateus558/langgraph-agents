@@ -1,6 +1,7 @@
 # websearch_tool.py
 from __future__ import annotations
 
+import os
 from typing import Optional, Tuple, Any, Dict, List
 import random
 from threading import RLock
@@ -10,26 +11,28 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain.chat_models import init_chat_model
 
 # Import from the new websearch package
-from . import WebSearchAgent, SearchAgentConfig
+from . import WebSearchAgent
+from websearch.config import SearchAgentConfig
 
 # --------------------------------------------------------------------
-# Singleton thread-safe do grafo + cache por (k)
+# Singleton thread-safe cache per k
 # --------------------------------------------------------------------
 _AGENTS: Dict[int, WebSearchAgent] = {}
 _LOCK = RLock()
 
-DEFAULT_SEARX_HOST = "http://192.168.30.100:8095"
-DEFAULT_BASE_URL = "http://192.168.0.5:11434"
-DEFAULT_MODEL_NAME = "llama3.1"
-DEFAULT_TEMPERATURE = 0.5
-DEFAULT_NUM_CTX = 8192
-DEFAULT_K = 8
+# Default values - can be overridden by environment variables
+DEFAULT_SEARX_HOST = os.getenv("SEARX_HOST", "http://localhost:8095")
+DEFAULT_BASE_URL = os.getenv("LLM_BASE_URL") or os.getenv("BASE_URL")
+DEFAULT_MODEL_NAME = os.getenv("WEBSEARCH_MODEL_NAME", "llama3.1")
+DEFAULT_TEMPERATURE = float(os.getenv("SEARCH_TEMPERATURE", "0.5"))
+DEFAULT_NUM_CTX = int(os.getenv("SEARCH_NUM_CTX", "8192"))
+DEFAULT_K = int(os.getenv("SEARCH_K", "8"))
 
 
 def _build_agent_for_k(
     *,
     searx_host: str = DEFAULT_SEARX_HOST,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = DEFAULT_BASE_URL,
     model_name: str = DEFAULT_MODEL_NAME,
     temperature: float = DEFAULT_TEMPERATURE,
     num_ctx: int = DEFAULT_NUM_CTX,
@@ -49,13 +52,13 @@ def _build_agent_for_k(
 def _get_agent(
     *,
     searx_host: str = DEFAULT_SEARX_HOST,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = DEFAULT_BASE_URL,
     model_name: str = DEFAULT_MODEL_NAME,
     temperature: float = DEFAULT_TEMPERATURE,
     num_ctx: int = DEFAULT_NUM_CTX,
     k: int = DEFAULT_K,
 ):
-    """Obtém (ou cria) um agente com o 'k' solicitado, de forma thread-safe."""
+    """Get (or create) an agent with the requested 'k', thread-safe."""
     with _LOCK:
         agent = _AGENTS.get(k)
         if agent is None:
