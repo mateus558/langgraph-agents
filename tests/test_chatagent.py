@@ -39,7 +39,7 @@ def test_chatagent_basic_invocation(monkeypatch):
 
     monkeypatch.setattr(chat_mod, "init_chat_model", lambda *a, **k: _MockModel("Hello!"))
 
-    agent = chat_mod.ChatAgent(chat_mod.AgentConfig(messages_to_keep=2, max_tokens_before_summary=100)).graph
+    agent = chat_mod.ChatAgent(chat_mod.ChatAgentConfig(messages_to_keep=2, max_tokens_before_summary=100)).agent
 
     state = cast(AgentState, {
         "messages": [HumanMessage(content="Hi")],
@@ -69,9 +69,9 @@ def test_chatagent_summary_path(monkeypatch):
             return {"summary": "S", "messages": state.get("messages", [])[-2:]}
 
     # Inject summarizer instance
-    agent = chat_mod.ChatAgent(chat_mod.AgentConfig(messages_to_keep=2, max_tokens_before_summary=1))
+    agent = chat_mod.ChatAgent(chat_mod.ChatAgentConfig(messages_to_keep=2, max_tokens_before_summary=1))
     agent.summarizer = _MockSummarizer()  # type: ignore[assignment]
-    graph = agent.graph
+    graph = agent.agent
 
     state = cast(AgentState, {
         "messages": [HumanMessage(content="Hi"), HumanMessage(content="Tell me more")],

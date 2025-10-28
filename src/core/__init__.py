@@ -1,9 +1,10 @@
-from core.contracts import AgentConfig, AgentProtocol, PromptProtocol
+from core.contracts import AgentConfig, AgentProtocol, AgentMixin, PromptProtocol
 
 __all__ = [
     "AgentConfig",
     "AgentProtocol",
-    "PromptProtocol"
+    "PromptProtocol",
+    "AgentMixin"
 ]
 
 __version__ = "1.0.0"

@@ -24,13 +24,12 @@ Example:
     })
 """
 
-from .agent import AgentProtocol, WebSearchAgent
+from .agent import WebSearchAgent
 from .config import SearchAgentConfig, SearchState
 from .constants import ALLOWED_CATEGORIES
 
 __all__ = [
     "WebSearchAgent",
-    "AgentProtocol",
     "SearchAgentConfig",
     "SearchState",
     "ALLOWED_CATEGORIES",

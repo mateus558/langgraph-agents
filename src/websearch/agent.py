@@ -30,7 +30,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import CachePolicy
 from requests import RequestException
 
-from core.contracts import AgentProtocol
+from core.contracts import AgentMixin
 from websearch.config import SearchAgentConfig, SearchState
 from websearch.constants import ALLOWED_CATEGORIES
 from websearch.heuristics import CategoryResponse, heuristic_categories
@@ -55,7 +55,9 @@ if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 
-class WebSearchAgent(AgentProtocol):
+class WebSearchAgent(AgentMixin):
+    # Narrow type so editors/lint know the concrete config fields exist
+    config: SearchAgentConfig
     """WebSearch agent class: categorize -> search -> summarize.
 
     Pipeline:
@@ -87,25 +89,20 @@ class WebSearchAgent(AgentProtocol):
         # Ensure a model exists if it is not provided in the configuration
         if getattr(self.config, "model", None) is None:
             self.config.model = cast(BaseChatModel, self._build_model())
-        self.graph = self._build_graph()
+        self.agent = self._build_graph()
 
     def invoke(self, state: SearchState) -> Any:
         """Invoke the graph with the provided state."""
-        return self.graph.invoke(state)
-
-    def get_mermaid(self) -> str:
-        """Return a Mermaid diagram of the graph."""
-        try:
-            return str(self.graph.get_graph().draw_mermaid())
-        except Exception:
-            # Simple fallback to avoid failures if the API changes
-            return "graph TD\n  START --> categorize_query --> web_search --> summarize --> END"
+        assert self.agent
+        return self.agent.invoke(state)
 
     # -----------------------------
     # BUILDERS
     # -----------------------------
     def _build_model(self):
         """Create the chat model via init_chat_model."""
+        assert self.config
+
         # Default provider: use ollama if base_url exists, otherwise openai
         provider = getattr(self.config, "model_provider", None) or ("ollama" if self.config.base_url else "openai")
         kwargs_ctx = {}
@@ -113,11 +110,11 @@ class WebSearchAgent(AgentProtocol):
             kwargs_ctx["num_ctx"] = self.config.num_ctx
 
         model = init_chat_model(
-            model=self.config.model_name,
-            model_provider=provider,
-            base_url=self.config.base_url,
-            temperature=self.config.temperature,
-            kwargs=kwargs_ctx or None,
+            model = self.config.model_name,
+            model_provider = provider,
+            base_url = self.config.base_url,
+            temperature = self.config.temperature,
+            kwargs = kwargs_ctx or None,
         )
         return model
 
@@ -350,7 +347,7 @@ def _create_default_agent():
         num_ctx=int(os.getenv("SEARCH_NUM_CTX", "8192")),
     )
     agent = WebSearchAgent(config)
-    return agent.graph
+    return agent.agent
 
 
 # Exports for LangGraph server (referenced in langgraph.json)

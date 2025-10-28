@@ -52,8 +52,6 @@ class SearchAgentConfig(AgentConfig):
     """
     searx_host: str = "http://localhost:8095"
     k: int = 8
-    temperature: float = 0.2
-    num_ctx: int = 8192
     max_categories: int = 3
     lang: str | None = "en-US"
     safesearch: int = 1

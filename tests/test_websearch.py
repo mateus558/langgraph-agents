@@ -54,7 +54,7 @@ def test_websearch_basic_flow(monkeypatch):
 
     monkeypatch.setattr(ws_mod, "SearxSearchWrapper", _MockSearx)
 
-    agent = ws_mod.WebSearchAgent(ws_mod.SearchAgentConfig(k=2)).graph
+    agent = ws_mod.WebSearchAgent(ws_mod.SearchAgentConfig(k=2)).agent
 
     state = cast(ws_mod.SearchState, {
         "query": "latest python news",

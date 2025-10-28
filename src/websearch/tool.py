@@ -134,7 +134,7 @@ def websearch(
         ]
 
         # Run in batch if supported, else sequential
-        graph: Any = agent.graph
+        graph: Any = agent.agent
         if hasattr(graph, "batch") and callable(graph.batch):
             from typing import cast as _cast
             states = _cast(list[Any], graph.batch(inputs))

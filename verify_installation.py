@@ -104,7 +104,7 @@ def check_agents():
     print("\n🤖 Checking agents...")
     
     try:
-        from src.chatagent.agent import ChatAgent, AgentConfig as ChatConfig
+        from src.chatagent.agent import ChatAgent, ChatAgentConfig as ChatConfig
         config = ChatConfig(model_name="test-model", base_url=None)
         print("  ✅ ChatAgent can be imported and configured")
     except Exception as e:

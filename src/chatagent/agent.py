@@ -10,14 +10,14 @@ from langgraph.graph import END, START, StateGraph
 from chatagent.config import AgentState
 from chatagent.summarizer import OllamaSummarizer
 from config import get_settings
-from core.contracts import AgentProtocol
+from core.contracts import AgentMixin
 from utils.messages import TokenEstimator, coerce_message_content
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class AgentConfig:
+class ChatAgentConfig:
     messages_to_keep: int = 5
     max_tokens_before_summary: int = 4000
     model_name: str | None = None
@@ -26,9 +26,11 @@ class AgentConfig:
     num_ctx: int = 131072
 
 
-class ChatAgent(AgentProtocol):
-    def __init__(self, config: AgentConfig | None = None):
-        self.config = config or AgentConfig()
+class ChatAgent(AgentMixin):
+    config: ChatAgentConfig
+
+    def __init__(self, config: ChatAgentConfig | None = None):
+        self.config = config or ChatAgentConfig()
 
         # Load settings from environment if not provided in config
         settings = get_settings()
@@ -48,13 +50,11 @@ class ChatAgent(AgentProtocol):
         self.last_token_count = 0  # last snapshot for logging
         self._tokenizer = TokenEstimator()
 
-        self.graph = self._build_graph()
+        self.agent = self._build_graph()
 
     def invoke(self, state: AgentState) -> Any:
-        return self.graph.invoke(state)
-
-    def get_mermaid(self) -> str:
-        return str(self.graph.get_graph().draw_mermaid())
+        assert self.agent
+        return self.agent.invoke(state)
 
     def _build_generate_node(self):
         # Initialize model with config values or environment defaults
@@ -190,7 +190,7 @@ def _create_default_agent():
         pass  # dotenv not available
 
     # Load all configuration from environment
-    config = AgentConfig(
+    config = ChatAgentConfig(
         model_name=os.getenv("MODEL_NAME") or os.getenv("CHAT_MODEL_NAME"),
         base_url=os.getenv("LLM_BASE_URL") or os.getenv("BASE_URL"),
         messages_to_keep=int(os.getenv("CHAT_MESSAGES_TO_KEEP", "5")),
@@ -199,7 +199,7 @@ def _create_default_agent():
         num_ctx=int(os.getenv("CHAT_NUM_CTX", "131072")),
     )
     agent = ChatAgent(config)
-    return agent.graph
+    return agent.agent
 
 
 # Export for LangGraph server (referenced in langgraph.json)
