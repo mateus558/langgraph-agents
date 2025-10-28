@@ -1,14 +1,12 @@
-"""Constants and patterns for WebSearch agent.
+"""Constants for web search categorization and patterns.
 
-This module defines the allowed search categories and heuristic patterns
-used for query classification.
+This module defines allowed categories and pattern matching rules for
+categorizing search queries using heuristics.
 """
 
-from typing import Tuple, List, Iterable
+from typing import Iterable, List, Tuple
 
-# ---------------------------
-# Categorias suportadas (ajuste conforme sua instância)
-# ---------------------------
+# Supported categories (adjust according to your instance)
 ALLOWED_CATEGORIES: Tuple[str, ...] = (
     "general", "news", "images", "videos", "map", "music", "files",
     "it", "science", "social media", "shopping", "qa", "apps",

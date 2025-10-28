@@ -191,22 +191,22 @@ def websearch(
 
         sys = SystemMessage(
             content=(
-                "Resuma os resultados de busca de forma útil e objetiva, respondendo à consulta original. "
-                "Mencione fontes relevantes (URLs)."
+                "Summarize search results in a useful and objective way, responding to the original query. "
+                "Mention relevant sources (URLs). Respond in the same language as the query."
             )
         )
 
         # Build the summary prompt using the sampled results
         if len(qlist) == 1:
-            qlabel = f"Consulta: {qlist[0]}\n\n"
+            qlabel = f"Query: {qlist[0]}\n\n"
         else:
-            qlabel = "Consultas:\n- " + "\n- ".join(qlist) + "\n\n"
+            qlabel = "Queries:\n- " + "\n- ".join(qlist) + "\n\n"
 
         lines = [
             f"{i+1}. {r.get('title','')} — {r.get('url','')}\n{r.get('snippet','')}"
             for i, r in enumerate(sampled_results)
         ]
-        prompt = qlabel + "Resultados (amostrados):\n" + "\n".join(lines)
+        prompt = qlabel + "Results (sampled):\n" + "\n".join(lines)
 
         out = model.invoke([sys, HumanMessage(content=prompt)])  # type: ignore
         summary = (getattr(out, "content", "") or "").strip()
@@ -225,5 +225,5 @@ def websearch(
         return summary, artifact
 
     except Exception as e:
-        # Em content, mensagem curta; em artifact, detalhes do erro
+        # Short message in content; error details in artifact
         return f"Error: {e}", {"error": str(e), "query": "", "k": top_k or DEFAULT_K}

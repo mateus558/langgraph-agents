@@ -93,12 +93,8 @@ def sanitize_categories(cats: Iterable[str]) -> List[str]:
 
 
 class CategoryResponse(BaseModel):
-    """Structured output for LLM categorization.
-    
-    This Pydantic model is used with LangChain's structured output
-    to ensure the LLM returns valid categories.
-    """
-    categories: List[str] = Field(..., description="Lista de categorias escolhidas")
+    """Schema for categorization response."""
+    categories: List[str] = Field(..., description="List of chosen categories")
 
     @validator("categories", pre=True)
     def _sanitize(cls, v):

@@ -1,16 +1,16 @@
 """WebSearch agent implementation.
 
-Este módulo define a classe WebSearchAgent que orquestra o fluxo
-categorize -> search -> summarize usando SearxNG e um LLM.
+This module defines the WebSearchAgent class that orchestrates the flow
+categorize -> search -> summarize using SearxNG and an LLM.
 
-Principais melhorias vs. versão anterior:
-- Inicialização garantida do modelo (quando ausente no config)
-- `with_structured_output` criado no momento da chamada (sem “congelar” no closure)
-- Nós não mutam o estado de entrada; retornam apenas deltas
-- Erros de busca não inserem HumanMessage; usam retorno limpo e logging
-- União de engines allow/block para todas as categorias
-- Sanitização extra na remoção de URLs fora da whitelist
-- Substituição de prints por logging
+Key improvements vs. previous version:
+- Guaranteed model initialization (when absent in config)
+- `with_structured_output` created at call time (not frozen in closure)
+- Nodes don't mutate input state; return only deltas
+- Search errors don't insert HumanMessage; use clean return and logging
+- Union of allow/block engines for all categories
+- Extra sanitization for removing URLs outside whitelist
+- Replaced prints with logging
 """
 
 from __future__ import annotations
@@ -58,14 +58,14 @@ if not logger.handlers:
 
 
 class WebSearchAgent(AgentProtocol):
-    """Agente WebSearch class-based: categorize -> search -> summarize.
+    """WebSearch agent class: categorize -> search -> summarize.
 
     Pipeline:
-      1) Categorize: heurísticas + LLM (structured output) para escolher categorias Searx
-      2) Search: consulta SearxNG com parâmetros por categoria e política de recência
-      3) Summarize: sumariza citando apenas links da whitelist
+      1) Categorize: heuristics + LLM (structured output) to choose Searx categories
+      2) Search: query SearxNG with parameters per category and recency policy
+      3) Summarize: summarize citing only links from whitelist
 
-    Exemplo de uso:
+    Example usage:
         config = SearchAgentConfig(searx_host="http://localhost:8080", k=5)
         agent = WebSearchAgent(config)
 
@@ -88,7 +88,7 @@ class WebSearchAgent(AgentProtocol):
         self.config = config or SearchAgentConfig()
         # Garante que exista um modelo, se não vier pronto no config
         if getattr(self.config, "model", None) is None:
-            self.config.model = self._build_model()
+            self.config.model = self._build_model()  # type: ignore[assignment]
         self.graph = self._build_graph()
 
     def invoke(self, state: SearchState) -> Any:
@@ -124,13 +124,13 @@ class WebSearchAgent(AgentProtocol):
         return model
 
     def _build_categorize_node(self):
-        """Nó de categorização (heurísticas + LLM com structured output)."""
+        """Node for categorization (heuristics + LLM with structured output)."""
 
         SYS_PROMPT = SystemMessage(
             content=(
-                "Você recebe uma consulta e deve escolher as categorias do Searx mais relevantes. "
-                f"Conjunto permitido: {', '.join(ALLOWED_CATEGORIES)}. "
-                "Responda apenas com JSON exatamente compatível com o schema solicitado."
+                "You receive a query and must choose the most relevant Searx categories. "
+                f"Allowed set: {', '.join(ALLOWED_CATEGORIES)}. "
+                "Reply only with JSON exactly compatible with the requested schema."
             )
         )
 
@@ -146,7 +146,7 @@ class WebSearchAgent(AgentProtocol):
         ]
 
         def llm_categories(query: str, hints: List[str], limit: int) -> List[str]:
-            """Obtém categorias via LLM (structured output); cai em 'general' no erro."""
+            """Get categories via LLM (structured output); fallback to 'general' on error."""
             if not getattr(self.config, "model", None):
                 return ["general"]
             try:
@@ -154,12 +154,12 @@ class WebSearchAgent(AgentProtocol):
                 user_msg = HumanMessage(content=f'QUERY: "{query}"\nHINTS: {json.dumps(hints, ensure_ascii=False)}')
                 resp: CategoryResponse = model_struct.invoke([SYS_PROMPT, *FEWSHOT, user_msg])  # type: ignore
                 cats = (resp.categories or [])
-                # Sanitiza p/ somente categorias permitidas
+                # Sanitize to only allowed categories
                 cats = [c for c in cats if c in ALLOWED_CATEGORIES]
                 cats = (cats or ["general"])[: max(1, limit)]
                 return cats
             except Exception as e:
-                logger.debug("Structured categorize falhou: %r", e)
+                logger.debug("Structured categorize failed: %r", e)
                 return ["general"]
 
         def _categorize(state: SearchState) -> dict:
@@ -174,7 +174,7 @@ class WebSearchAgent(AgentProtocol):
         return _categorize
 
     def _build_web_search_node(self):
-        """Nó de busca no SearxNG, com retry e pós-processamento."""
+        """Node for SearxNG search, with retry and post-processing."""
         search = SearxSearchWrapper(searx_host=self.config.searx_host)
 
         def searx_call_with_retry(call):
@@ -205,7 +205,7 @@ class WebSearchAgent(AgentProtocol):
             if (tr := pick_time_range(cats)):
                 kwargs["time_range"] = tr
 
-            # Unifica allow/block de todas as categorias
+            # Unify allow/block from all categories
             allow_set, block_set = set(), set()
             if getattr(self.config, "engines_allow", None):
                 for c in cats:
@@ -216,7 +216,7 @@ class WebSearchAgent(AgentProtocol):
             if allow_set:
                 kwargs["engines"] = ",".join(sorted(allow_set))
             if block_set:
-                # remove quaisquer bloqueados que já estejam no allow
+                # remove any blocked that are already in allow
                 kwargs["blocked_engines"] = ",".join(sorted(block_set - allow_set))
 
             try:
@@ -224,7 +224,7 @@ class WebSearchAgent(AgentProtocol):
             except (RequestException, JSONDecodeError, ValueError) as e:
                 dt = time.perf_counter() - t0
                 logger.error("[websearch] node=web_search error=%s dt=%.3fs", type(e).__name__, dt)
-                # Não polui mensagens do usuário; só retorna delta limpo
+                # Don't pollute user messages; just return clean delta
                 return {"results": [], "categories": cats}
 
             cleaned = diversify_topk(dedupe_results(normalize_urls(raw)), k=self.config.k)
@@ -235,11 +235,11 @@ class WebSearchAgent(AgentProtocol):
         return _search
 
     def _build_summarize_node(self):
-        """Nó de sumarização com whitelist rigorosa de URLs."""
-        sys = SystemMessage(content="Seja factual, conciso e objetivo.")
+        """Summarization node with strict URL whitelist."""
+        sys = SystemMessage(content="Be factual, concise, and objective. Always respond in the same language as the user's query.")
 
         def _strip_punct(u: str) -> str:
-            # Remove pontuação comum à direita, preservando a URL base
+            # Remove common punctuation from the right, preserving base URL
             return u.rstrip(").,;:!?]")
 
         def _summarize(state: SearchState) -> dict:
@@ -249,7 +249,7 @@ class WebSearchAgent(AgentProtocol):
 
             if not results:
                 logger.info("[websearch] node=summarize dt=%.3fs (no results)", time.perf_counter() - t0)
-                return {"summary": f"Não encontrei resultados para: {query}"}
+                return {"summary": f"No results found for: {query}"}
 
             urls = [r.get("link", "") for r in results if r.get("link")]
             lines = [
@@ -257,22 +257,23 @@ class WebSearchAgent(AgentProtocol):
                 for i, r in enumerate(results)
             ]
 
-            whitelist_msg = "Você SÓ pode citar links exatamente da lista a seguir:\n" + "\n".join(urls)
+            whitelist_msg = "You can ONLY cite links exactly from the following list:\n" + "\n".join(urls)
             prompt = (
                 f"{whitelist_msg}\n\n"
-                "Responda à consulta com 1–3 parágrafos, citando 2–5 links APENAS dessa lista.\n\n"
-                f"Consulta: {query}\n\nResultados:\n" + "\n".join(lines)
+                "Answer the query with 1–3 paragraphs, citing 2–5 links ONLY from this list.\n"
+                "Respond in the same language as the query.\n\n"
+                f"Query: {query}\n\nResults:\n" + "\n".join(lines)
             )
 
             if not getattr(self.config, "model", None):
                 top = "\n".join(lines[:3])
                 logger.info("[websearch] node=summarize dt=%.3fs (fallback)", time.perf_counter() - t0)
-                return {"summary": f"(Fallback sem LLM)\n{top}"}
+                return {"summary": f"(Fallback without LLM)\n{top}"}
 
             out = self.config.model.invoke([sys, HumanMessage(content=prompt)])  # type: ignore
             text = (getattr(out, "content", "") or "").strip()
 
-            # Remove qualquer URL que não esteja na whitelist (com canonicalização)
+            # Remove any URL that is not in whitelist (with canonicalization)
             safe = {canonical_url(u) for u in urls}
             for token in re.findall(r"https?://\S+", text):
                 token_norm = _strip_punct(token)
@@ -286,7 +287,7 @@ class WebSearchAgent(AgentProtocol):
         return _summarize
 
     def _build_graph(self):
-        """Monta e compila o LangGraph: START → categorize → search → summarize → END."""
+        """Assemble and compile the LangGraph: START → categorize → search → summarize → END."""
         g = StateGraph(SearchState)
 
         g.add_node("categorize_query", self._build_categorize_node())

@@ -4,9 +4,9 @@ from langchain.messages import AnyMessage
 
 
 class AgentState(TypedDict):
-    # reducer para aplicar appends/remoções
+    # Reducer to apply appends/removals
     messages: Annotated[list[AnyMessage], add_messages]
-    # 'history' não precisa de reducer se você sempre reescreve
+    # 'history' doesn't need a reducer if you always rewrite
     history: list[AnyMessage]
     summary: str | None
     summarize_decision: str | None
@@ -14,5 +14,5 @@ class AgentState(TypedDict):
 
 class Summarizer(Protocol):
     def summarize(self, state: AgentState) -> dict:
-        """Retorna um partial state update: {"summary": str, "messages": [...]}"""
+        """Returns a partial state update: {"summary": str, "messages": [...]}"""
         ...
