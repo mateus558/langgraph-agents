@@ -1,4 +1,4 @@
-.PHONY: help install install-dev format lint type-check test test-cov clean run-chat run-websearch
+.PHONY: help install install-dev format lint type-check test test-cov clean pre-commit run-chat run-websearch architecture
 
 help:
 	@echo "Available commands:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make pre-commit    - Install pre-commit hooks"
 	@echo "  make run-chat      - Run chat agent"
 	@echo "  make run-websearch - Run websearch agent"
+	@echo "  make architecture  - Generate ARCHITECTURE.md with Mermaid diagrams"
 
 install:
 	pip install -e .
@@ -56,3 +57,6 @@ run-chat:
 
 run-websearch:
 	python -m src.websearch.agent
+
+architecture:
+	python scripts/generate_architecture_md.py
