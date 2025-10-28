@@ -27,7 +27,8 @@ class TokenEstimator:
             self._mode = "heuristic"
 
     def count_text(self, text: str) -> int:
-        if not text:
+        # Empty or whitespace-only strings should count as 0 tokens
+        if not text or (isinstance(text, str) and text.strip() == ""):
             return 0
         if self._mode == "tiktoken":
             try:
@@ -40,6 +41,8 @@ class TokenEstimator:
     @staticmethod
     def _heuristic_count(text: str) -> int:
         t = re.sub(r"\s+", " ", text).strip()
+        if not t:
+            return 0
         return max(1, math.ceil(len(t) / 4))
 
     def count_messages(self, messages: Iterable[Any]) -> int:

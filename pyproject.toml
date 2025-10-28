@@ -101,10 +101,6 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--tb=short",
-    "--cov=src",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
 ]
 
 [tool.coverage.run]
