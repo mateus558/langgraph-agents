@@ -82,12 +82,12 @@ def _get_agent(
     description=(
         "Search the web via SearXNG. Accepts a list of queries.\n"
         "Ask with k at least equal to the number of queries.\n"
-        "Usage examples:\n"
-        "- websearch(queries=[\"notícias brasileiras últimas\"], top_k=5)\n"
-        "- websearch(queries=[\"economia brasil hoje\", \"inflação brasil 2025\"], top_k=10)"
+    "Usage examples:\n"
+    "- websearch(queries=[\"latest tech news\"], top_k=5)\n"
+    "- websearch(queries=[\"us economy outlook\", \"inflation forecast 2025\"], top_k=10)"
     ),
     response_format="content_and_artifact",
-)  # use return_direct=True se quiser encerrar a conversa
+)  # use return_direct=True if you want to end the conversation
 def websearch(
     queries: Optional[List[str]] = None,
     top_k: Optional[int] = None,

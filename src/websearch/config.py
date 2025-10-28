@@ -41,7 +41,7 @@ class SearchAgentConfig(AgentConfig):
         temperature: LLM temperature for response generation.
         num_ctx: Context window size for the LLM.
         max_categories: Maximum number of categories to use per query.
-        lang: Language preference for search results (e.g., "pt-BR", "en-US").
+    lang: Language preference for search results (e.g., "en-US", "en-GB").
         safesearch: Safe search level (0=off, 1=moderate, 2=strict).
         timeout_s: Request timeout in seconds.
         retries: Number of retry attempts for failed Searx requests.
@@ -54,7 +54,7 @@ class SearchAgentConfig(AgentConfig):
     temperature: float = 0.2
     num_ctx: int = 8192
     max_categories: int = 3
-    lang: str | None = "pt-BR"
+    lang: str | None = "en-US"
     safesearch: int = 1
     timeout_s: float = 8.0
     retries: int = 2

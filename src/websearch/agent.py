@@ -44,7 +44,7 @@ from websearch.utils import (
     pick_time_range,
 )
 
-# Opcional: se quiser carregar .env aqui. Em produção, prefira fazer no bootstrap da app.
+# Optional: load .env here if needed. In production, prefer doing it in the app bootstrap.
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -53,7 +53,7 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
-    # Configuração simples de logging caso a app não tenha configurado ainda
+    # Simple logging configuration in case the app has not configured it yet
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 
 
@@ -80,35 +80,35 @@ class WebSearchAgent(AgentProtocol):
     """
 
     def __init__(self, config: SearchAgentConfig | None = None):
-        """Inicializa o agente.
+        """Initialize the agent.
 
         Args:
-            config: Configuração com model, Searx e parâmetros de busca.
+            config: Configuration with model, Searx, and search parameters.
         """
         self.config = config or SearchAgentConfig()
-        # Garante que exista um modelo, se não vier pronto no config
+        # Ensure a model exists if it is not provided in the configuration
         if getattr(self.config, "model", None) is None:
             self.config.model = self._build_model()  # type: ignore[assignment]
         self.graph = self._build_graph()
 
     def invoke(self, state: SearchState) -> Any:
-        """Invoca o grafo com o estado dado."""
+        """Invoke the graph with the provided state."""
         return self.graph.invoke(state)
 
     def get_mermaid(self) -> str:
-        """Retorna diagrama Mermaid do grafo."""
+        """Return a Mermaid diagram of the graph."""
         try:
             return self.graph.get_graph().draw_mermaid()
         except Exception:
-            # Fallback simples (evita quebrar se a API mudar)
+            # Simple fallback to avoid failures if the API changes
             return "graph TD\n  START --> categorize_query --> web_search --> summarize --> END"
 
     # -----------------------------
     # BUILDERS
     # -----------------------------
     def _build_model(self):
-        """Cria o modelo de chat via init_chat_model."""
-        # provider padrão: se base_url existir, assume ollama; senão openai
+        """Create the chat model via init_chat_model."""
+        # Default provider: use ollama if base_url exists, otherwise openai
         provider = getattr(self.config, "model_provider", None) or ("ollama" if self.config.base_url else "openai")
         kwargs_ctx = {}
         if getattr(self.config, "num_ctx", None) is not None:
@@ -139,9 +139,9 @@ class WebSearchAgent(AgentProtocol):
             AIMessage(content='{"categories":["news","economics"]}'),
             HumanMessage(content='QUERY: "github actions cache permission denied"\nHINTS: ["news"]'),
             AIMessage(content='{"categories":["it"]}'),
-            HumanMessage(content='QUERY: "coisas variadas sem contexto"\nHINTS: []'),
+            HumanMessage(content='QUERY: "miscellaneous things without context"\nHINTS: []'),
             AIMessage(content='{"categories":["general"]}'),
-            HumanMessage(content='QUERY: "trailer do filme dune 2"\nHINTS: ["videos"]'),
+            HumanMessage(content='QUERY: "dune 2 movie trailer"\nHINTS: ["videos"]'),
             AIMessage(content='{"categories":["videos"]}'),
         ]
 
@@ -209,10 +209,10 @@ class WebSearchAgent(AgentProtocol):
             allow_set, block_set = set(), set()
             if getattr(self.config, "engines_allow", None):
                 for c in cats:
-                    allow_set |= set(self.config.engines_allow.get(c, [])) # type: ignore
+                    allow_set |= set(self.config.engines_allow.get(c, []))  # type: ignore
             if getattr(self.config, "engines_block", None):
                 for c in cats:
-                    block_set |= set(self.config.engines_block.get(c, [])) # type: ignore
+                    block_set |= set(self.config.engines_block.get(c, []))  # type: ignore
             if allow_set:
                 kwargs["engines"] = ",".join(sorted(allow_set))
             if block_set:
