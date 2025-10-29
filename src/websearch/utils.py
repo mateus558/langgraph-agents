@@ -174,3 +174,22 @@ def pick_time_range(cats: list[str]) -> str | None:
     if "it" in cats:
         return "month"
     return None
+
+
+def to_searx_locale(code: str | None) -> str | None:
+    """Normalize a language code to SearxNG locale format."""
+
+    if not code:
+        return None
+    c = code.strip()
+    if not c:
+        return None
+    if c.lower() == "auto":
+        return None
+    c = c.replace("_", "-")
+    parts = c.split("-")
+    if len(parts) == 1:
+        return parts[0].lower()
+    lang = parts[0].lower()
+    region = parts[1].upper() if parts[1] else ""
+    return f"{lang}-{region}" if region else lang
