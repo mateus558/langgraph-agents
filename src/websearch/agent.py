@@ -82,10 +82,6 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
                 self._local_tz = await asyncio.to_thread(ZoneInfo, "America/Sao_Paulo")
         return self._local_tz
 
-    async def call_llm_safely(self, model: BaseChatModel, msgs: list[Any], timeout: float = 90.0):
-        """Compatibility shim for callers expecting the old instance method."""
-
-        return await call_llm_safely(model, msgs, timeout)
 
     async def _call_llm(self, msgs: list[Any], timeout: float = 90.0):
         model = self.get_model()
@@ -178,7 +174,6 @@ def _create_default_agent():
         retries=int(os.getenv("SEARCH_RETRIES", "2")),
         backoff_base=float(os.getenv("SEARCH_BACKOFF_BASE", "1.0")),
         temperature=float(os.getenv("SEARCH_TEMPERATURE", "0.5")),
-        num_ctx=int(os.getenv("SEARCH_NUM_CTX", "8192")),
     )
     setattr(config, "pivot_to_english", _to_bool(os.getenv("SEARCH_PIVOT_TO_EN", "1"), True))
 
