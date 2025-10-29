@@ -23,18 +23,18 @@ Note:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 
 
 @dataclass(slots=True)
 class Settings:
-    model_name: str = "openai:gpt-5-nano"
-    base_url: str | None = "http://192.168.0.5:11434"
+    model_name: str = "llama3.1"
+    base_url: str | None = None
     embeddings_model: str = "nomic-embed-text"
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         # Avoid referencing class attributes directly when slots=True; use an instance
         defaults = cls()
         model_name = os.getenv("MODEL_NAME", defaults.model_name)

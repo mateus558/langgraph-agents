@@ -1,35 +1,40 @@
-# websearch_tool.py
+"""LangChain tool wrapper around the WebSearch agent."""
+
 from __future__ import annotations
 
-from typing import Optional, Tuple, Any, Dict, List
+import os
 import random
 from threading import RLock
+from typing import Any
 
+from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain.chat_models import init_chat_model
 
 # Import from the new websearch package
-from . import WebSearchAgent, SearchAgentConfig
+from websearch.config import SearchAgentConfig
+
+from . import WebSearchAgent
 
 # --------------------------------------------------------------------
-# Singleton thread-safe do grafo + cache por (k)
+# Singleton thread-safe cache per k
 # --------------------------------------------------------------------
-_AGENTS: Dict[int, WebSearchAgent] = {}
+_AGENTS: dict[int, WebSearchAgent] = {}
 _LOCK = RLock()
 
-DEFAULT_SEARX_HOST = "http://192.168.30.100:8095"
-DEFAULT_BASE_URL = "http://192.168.0.5:11434"
-DEFAULT_MODEL_NAME = "llama3.1"
-DEFAULT_TEMPERATURE = 0.5
-DEFAULT_NUM_CTX = 8192
-DEFAULT_K = 8
+# Default values - can be overridden by environment variables
+DEFAULT_SEARX_HOST = os.getenv("SEARX_HOST", "http://localhost:8095")
+DEFAULT_BASE_URL = os.getenv("LLM_BASE_URL") or os.getenv("BASE_URL")
+DEFAULT_MODEL_NAME = os.getenv("WEBSEARCH_MODEL_NAME", "llama3.1")
+DEFAULT_TEMPERATURE = float(os.getenv("SEARCH_TEMPERATURE", "0.5"))
+DEFAULT_NUM_CTX = int(os.getenv("SEARCH_NUM_CTX", "8192"))
+DEFAULT_K = int(os.getenv("SEARCH_K", "8"))
 
 
 def _build_agent_for_k(
     *,
     searx_host: str = DEFAULT_SEARX_HOST,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = DEFAULT_BASE_URL,
     model_name: str = DEFAULT_MODEL_NAME,
     temperature: float = DEFAULT_TEMPERATURE,
     num_ctx: int = DEFAULT_NUM_CTX,
@@ -49,13 +54,13 @@ def _build_agent_for_k(
 def _get_agent(
     *,
     searx_host: str = DEFAULT_SEARX_HOST,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: str | None = DEFAULT_BASE_URL,
     model_name: str = DEFAULT_MODEL_NAME,
     temperature: float = DEFAULT_TEMPERATURE,
     num_ctx: int = DEFAULT_NUM_CTX,
     k: int = DEFAULT_K,
 ):
-    """Obtém (ou cria) um agente com o 'k' solicitado, de forma thread-safe."""
+    """Get (or create) an agent with the requested 'k', thread-safe."""
     with _LOCK:
         agent = _AGENTS.get(k)
         if agent is None:
@@ -79,16 +84,16 @@ def _get_agent(
     description=(
         "Search the web via SearXNG. Accepts a list of queries.\n"
         "Ask with k at least equal to the number of queries.\n"
-        "Usage examples:\n"
-        "- websearch(queries=[\"notícias brasileiras últimas\"], top_k=5)\n"
-        "- websearch(queries=[\"economia brasil hoje\", \"inflação brasil 2025\"], top_k=10)"
+    "Usage examples:\n"
+    "- websearch(queries=[\"latest tech news\"], top_k=5)\n"
+    "- websearch(queries=[\"us economy outlook\", \"inflation forecast 2025\"], top_k=10)"
     ),
     response_format="content_and_artifact",
-)  # use return_direct=True se quiser encerrar a conversa
+)  # use return_direct=True if you want to end the conversation
 def websearch(
-    queries: Optional[List[str]] = None,
-    top_k: Optional[int] = None,
-) -> Tuple[str, dict]:
+    queries: list[str] | None = None,
+    top_k: int | None = None,
+) -> tuple[str, dict]:
     """Search the web and return a concise, source-backed summary.
 
     Features:
@@ -100,22 +105,21 @@ def websearch(
         artifact: Dictionary with metadata (categories per query, merged results, sampled results, etc.).
 
     Args:
-        queries: Multiple queries to run in parallel (batch). 
+        queries: Multiple queries to run in parallel (batch).
         top_k: Final number of results to summarize. Defaults to 8.
     """
     try:
         k = int(top_k) if top_k is not None else DEFAULT_K
         # Build the batch of queries
-        qlist: List[str] = []
+        qlist: list[str] = []
         if queries and isinstance(queries, list):
             qlist = [q for q in (q.strip() for q in queries) if q]
-        
+
         if not qlist:
             return (
                 "No query provided.",
                 {"error": "missing_query", "queries": queries, "k": k},
             )
-
         agent = _get_agent(k=k)
 
         # Prepare input states for batch invocation
@@ -130,17 +134,19 @@ def websearch(
         ]
 
         # Run in batch if supported, else sequential
-        if hasattr(agent.graph, "batch") and callable(getattr(agent.graph, "batch")):
-            states = agent.graph.batch(inputs)  # type: ignore[attr-defined, call-arg]
+        graph: Any = agent.agent
+        if hasattr(graph, "batch") and callable(graph.batch):
+            from typing import cast as _cast
+            states = _cast(list[Any], graph.batch(inputs))
         else:
-            states = [agent.graph.invoke(inp) for inp in inputs]  # type: ignore[arg-type]
+            states = [graph.invoke(inp) for inp in inputs]
 
         # Collect and deduplicate results
-        merged_results: List[Dict[str, Any]] = []
+        merged_results: list[dict[str, Any]] = []
         seen: set[str] = set()
-        categories_per_query: Dict[str, Any] = {}
+        categories_per_query: dict[str, Any] = {}
 
-        def _result_key(item: Dict[str, Any]) -> str:
+        def _result_key(item: dict[str, Any]) -> str:
             url = (item.get("url") or "").strip()
             if url:
                 return url
@@ -149,7 +155,7 @@ def websearch(
             snip = (item.get("snippet") or "").strip()
             return f"{title}|{snip}"
 
-        for q, st in zip(qlist, states):
+        for q, st in zip(qlist, states, strict=False):
             categories_per_query[q] = st.get("categories")
             res = st.get("results") or []
             if isinstance(res, list):
@@ -188,24 +194,24 @@ def websearch(
 
         sys = SystemMessage(
             content=(
-                "Resuma os resultados de busca de forma útil e objetiva, respondendo à consulta original. "
-                "Mencione fontes relevantes (URLs)."
+                "Summarize search results in a useful and objective way, responding to the original query. "
+                "Mention relevant sources (URLs). Respond in the same language as the query."
             )
         )
 
         # Build the summary prompt using the sampled results
         if len(qlist) == 1:
-            qlabel = f"Consulta: {qlist[0]}\n\n"
+            qlabel = f"Query: {qlist[0]}\n\n"
         else:
-            qlabel = "Consultas:\n- " + "\n- ".join(qlist) + "\n\n"
+            qlabel = "Queries:\n- " + "\n- ".join(qlist) + "\n\n"
 
         lines = [
             f"{i+1}. {r.get('title','')} — {r.get('url','')}\n{r.get('snippet','')}"
             for i, r in enumerate(sampled_results)
         ]
-        prompt = qlabel + "Resultados (amostrados):\n" + "\n".join(lines)
+        prompt = qlabel + "Results (sampled):\n" + "\n".join(lines)
 
-        out = model.invoke([sys, HumanMessage(content=prompt)])  # type: ignore
+        out = model.invoke([sys, HumanMessage(content=prompt)])
         summary = (getattr(out, "content", "") or "").strip()
 
         if not summary:
@@ -222,5 +228,5 @@ def websearch(
         return summary, artifact
 
     except Exception as e:
-        # Em content, mensagem curta; em artifact, detalhes do erro
+        # Short message in content; error details in artifact
         return f"Error: {e}", {"error": str(e), "query": "", "k": top_k or DEFAULT_K}

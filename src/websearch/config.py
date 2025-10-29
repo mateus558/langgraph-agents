@@ -5,34 +5,44 @@ used throughout the WebSearch agent.
 """
 
 from __future__ import annotations
-from typing_extensions import TypedDict, List, Dict, Any
+
 import os
 from dataclasses import dataclass
+
+from typing_extensions import TypedDict
+
 from core.contracts import AgentConfig
 
-
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 
 
 class SearchState(TypedDict):
     """State for the WebSearch agent graph.
-    
+
     Attributes:
-        messages: List of messages exchanged during the search process.
         query: The search query string.
         categories: List of Searx categories determined for the query.
         results: List of search results from Searx.
         summary: Final LLM-generated summary of the search results.
+        lang: Detected or configured language code.
+        query_en: English-translated query for categorization.
     """
     query: str
-    categories: List[str] | None
-    results: List[Dict[str, Any]] | None
+    categories: list[str] | None
+    results: list[dict[str, object]] | None
     summary: str | None
+    lang: str | None
+    query_en: str | None
 
 
 @dataclass
 class SearchAgentConfig(AgentConfig):
     """Configuration for WebSearch agent.
-    
+
     Attributes:
         searx_host: SearxNG instance URL.
         k: Number of final results to return.
@@ -41,7 +51,7 @@ class SearchAgentConfig(AgentConfig):
         temperature: LLM temperature for response generation.
         num_ctx: Context window size for the LLM.
         max_categories: Maximum number of categories to use per query.
-        lang: Language preference for search results (e.g., "pt-BR", "en-US").
+    lang: Language preference for search results (e.g., "en-US", "en-GB").
         safesearch: Safe search level (0=off, 1=moderate, 2=strict).
         timeout_s: Request timeout in seconds.
         retries: Number of retry attempts for failed Searx requests.
@@ -50,11 +60,9 @@ class SearchAgentConfig(AgentConfig):
         engines_block: Per-category engine blocklist (optional).
     """
     searx_host: str = "http://192.168.30.100:8095"
-    k: int = 8
-    temperature: float = 0.2
-    num_ctx: int = 8192
-    max_categories: int = 3
-    lang: str | None = "pt-BR"
+    k: int = 30
+    max_categories: int = 4
+    lang: str | None = "en-US"
     safesearch: int = 1
     timeout_s: float = 8.0
     retries: int = 2

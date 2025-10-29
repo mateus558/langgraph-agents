@@ -1,63 +1,165 @@
 # summarizers.py
+import logging
 import time
-from typing import Sequence
+from collections.abc import Sequence
+
 from langchain.chat_models import init_chat_model
-from langchain.messages import AnyMessage, RemoveMessage
+from langchain.messages import AnyMessage, HumanMessage, RemoveMessage
+from langchain_core.messages import BaseMessage
 
 from chatagent.config import Summarizer
 
-class OllamaSummarizer(Summarizer):
-    def __init__(self, base_url="http://192.168.0.5:11434", model_id="granite4:tiny-h", k_tail=5, max_tokens_before_summary=500):
+logger = logging.getLogger(__name__)
+
+
+class BaseSummarizer(Summarizer):
+    """Base summarizer with shared behavior.
+
+    This centralizes common functionality so new implementations (e.g. OpenAI)
+    can be added with minimal duplication.
+    """
+
+    def __init__(
+        self,
+        model_id: str = "llama3.1",
+        base_url: str | None = None,
+        k_tail: int = 5,
+        max_tokens_before_summary: int = 500,
+        temperature: float | None = None,
+        num_ctx: int | None = None,
+    ):
         self.k_tail = k_tail
         self.max_tokens_before_summary = max_tokens_before_summary
 
-        self.model = init_chat_model(
-            model_id,
-            model_provider="ollama",
-            temperature=0,
-            base_url=base_url,
-            kwargs={"num_ctx": 131072},
-        )
+        provider = "ollama" if base_url else "openai"
+        kwargs = {"num_ctx": num_ctx} if num_ctx is not None else {}
 
-    def _is_user_visible(self, m: AnyMessage) -> bool:
-        if isinstance(m, RemoveMessage): return False
-        t = getattr(m, "type", "").lower()
-        if t not in {"human", "ai", "system", "tool"}: return False
-        c = getattr(m, "content", None)
-        return not (isinstance(c, str) and c.strip() == "__remove_all__")
+        # Initialize a chat model instance for summarization.
+        # Subclasses may override how the model is constructed if needed.
+        init_params: dict = {
+            "model": model_id,
+            "model_provider": provider,
+        }
+        if temperature is not None:
+            init_params["temperature"] = temperature
+        if base_url is not None:
+            init_params["base_url"] = base_url
+        if kwargs:
+            init_params["kwargs"] = kwargs
 
-    def _render(self, m: AnyMessage) -> str:
+        self.model = init_chat_model(**init_params)
+
+    def _is_user_visible(self, m: BaseMessage) -> bool:
+        if isinstance(m, RemoveMessage):
+            return False
+        msg_type = getattr(m, "type", "").lower()
+        if msg_type not in {"human", "ai", "system", "tool"}:
+            return False
+        content = getattr(m, "content", None)
+        return not (isinstance(content, str) and content.strip() == "__remove_all__")
+
+    def _render(self, m: BaseMessage) -> str:
         role = getattr(m, "type", m.__class__.__name__).upper()
         content = m.content if isinstance(m.content, str) else str(m.content)
         return f"{role}: {content}"
 
+    def build_prompt(self, summary: str, messages_text: str) -> str:
+        """Build the summarization prompt from current summary and messages.
+
+        Subclasses can extend or override this to tweak system rules or language
+        guidance.
+        """
+        if summary:
+            prompt = (
+                f"This is a summary to date:\n{summary}\n\n"
+                f"Extend the summary considering the new messages:\n{messages_text}\n"
+            )
+        else:
+            prompt = f"Create a concise summary of the conversation below:\n{messages_text}\n"
+
+        prompt += (
+            "\n### Rules:\n"
+            "\t- Provide a concise summary in the same language as the user."
+            "\n\t- Return only the summary, nothing else.\n"
+        )
+
+        return prompt
+
     def summarize(self, state):
         summary = state.get("summary") or ""
-        msgs: Sequence[AnyMessage] = state.get("messages", [])
+        msgs: Sequence[BaseMessage] = state.get("messages", [])
         visible = [m for m in msgs if self._is_user_visible(m)]
         messages_text = "\n".join(self._render(m) for m in visible)
 
-        prompt = (
-            f"This is a summary to date:\n{summary}\n\n"
-            f"Extend the summary considering the new messages:\n{messages_text}\n"
-            if summary else
-            f"Create a concise summary of the conversation below:\n{messages_text}\n"
-        )
+        prompt = self.build_prompt(summary, messages_text)
 
-        prompt += ("\n### Rules:\n"
-                   "\t- Provide a concise summary in the same language as the user."
-                   "\n\t- Return only the summary, nothing else.\n")
-
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info("[summarizer] prompt prepared")
-        # logger.debug(prompt)
+        logger.debug("Summarization prompt: %s", prompt)
         t0 = time.perf_counter()
-        resp = self.model.invoke(prompt)
-        print(f"[summarizer] invoke took {time.perf_counter()-t0:.3f}s")
-        new_summary = resp.content if isinstance(resp.content, str) else str(resp.content)
-        print(new_summary)
+        resp = self.model.invoke([HumanMessage(content=prompt)])
+        dt = time.perf_counter() - t0
+        logger.info("Summarization invoke took %.3fs", dt)
+
+        content = getattr(resp, "content", None)
+        new_summary = content if isinstance(content, str) else str(content)
+        logger.debug("New summary: %s", new_summary)
 
         tail = list(msgs[-self.k_tail:]) if self.k_tail > 0 else []
         from langgraph.graph.message import REMOVE_ALL_MESSAGES
         return {"summary": new_summary, "messages": [REMOVE_ALL_MESSAGES, *tail]}
+
+
+class OllamaSummarizer(BaseSummarizer):
+    """Backward-compatible name for the default summarizer implementation.
+
+    Currently this is a thin alias on BaseSummarizer that keeps the same
+    defaults (model id, big context window) used historically.
+    """
+
+    def __init__(
+        self,
+        model_id: str = "llama3.1",
+        base_url: str | None = None,
+        k_tail: int = 5,
+        max_tokens_before_summary: int = 500,
+        temperature: float | None = None,
+        num_ctx: int | None = None,
+    ):
+        super().__init__(
+            model_id=model_id,
+            base_url=base_url,
+            k_tail=k_tail,
+            max_tokens_before_summary=max_tokens_before_summary,
+            temperature=temperature,
+            num_ctx=num_ctx,
+        )
+
+
+class OpenAISummarizer(BaseSummarizer):
+    """Summarizer configured to use OpenAI models by default.
+
+    Default model is `gpt-5-nano`. This class exists to provide a clear
+    provider-specific entrypoint and to allow future OpenAI-specific
+    configuration (API keys, specialized prompt tweaks) without changing
+    the base summarizer behavior.
+    """
+
+    def __init__(
+        self,
+        model_id: str = "gpt-5-nano",
+        base_url: str | None = None,
+        k_tail: int = 5,
+        max_tokens_before_summary: int = 500,
+        temperature: float | None = None,
+        num_ctx: int | None = None,
+    ):
+        # Force base_url to None to ensure provider selection prefers OpenAI
+        # in BaseSummarizer (which chooses provider by base_url presence).
+        super().__init__(
+            model_id=model_id,
+            base_url=base_url,
+            k_tail=k_tail,
+            max_tokens_before_summary=max_tokens_before_summary,
+            temperature=temperature,
+            num_ctx=num_ctx,
+        )
+
