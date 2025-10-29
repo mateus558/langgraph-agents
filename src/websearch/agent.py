@@ -292,13 +292,11 @@ class WebSearchAgent(AgentProtocol):
         g.add_node("categorize_query", self._build_categorize_node())
         g.add_node(
             "web_search",
-            self._build_web_search_node(),
-            cache_policy=CachePolicy(ttl=120)
+            self._build_web_search_node()
         )
         g.add_node(
             "summarize",
-            self._build_summarize_node(),
-            cache_policy=CachePolicy(ttl=120)
+            self._build_summarize_node()
         )
 
         g.add_edge(START, "categorize_query")

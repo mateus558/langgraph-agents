@@ -48,7 +48,10 @@ class OllamaSummarizer(Summarizer):
                    "\t- Provide a concise summary in the same language as the user."
                    "\n\t- Return only the summary, nothing else.\n")
 
-        print(prompt)
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("[summarizer] prompt prepared")
+        # logger.debug(prompt)
         t0 = time.perf_counter()
         resp = self.model.invoke(prompt)
         print(f"[summarizer] invoke took {time.perf_counter()-t0:.3f}s")

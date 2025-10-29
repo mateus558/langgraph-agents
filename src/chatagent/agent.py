@@ -68,8 +68,8 @@ class ChatAgent(AgentProtocol):
             self.last_token_count = step_total
             self.token_count += step_total
 
-            print(f"[summarize_agent] Estimated tokens -> input: {input_tokens}, output: {output_tokens}, step_total: {step_total}, window_total: {self.token_count}")
-            print(f"[summarize_agent] generate_model.invoke took {dt:.3f}s")
+            logger.info("[summarize_agent] Estimated tokens -> input: %d, output: %d, step_total: %d, window_total: %d", input_tokens, output_tokens, step_total, self.token_count)
+            logger.info("[summarize_agent] generate_model.invoke took %.3fs", dt)
 
             # Partial update: append só a resposta; atualize history explicitamente
             new_history = (state.get("history", []) + ([msgs[-1]] if msgs else []) + [resp])
@@ -84,7 +84,7 @@ class ChatAgent(AgentProtocol):
         def _summarize(state: AgentState):
             result = self.summarizer.summarize(state)
             # Reset da janela após sumarizar
-            print(f"[summarize_agent] Summary done. Resetting token window (prev={self.token_count}).")
+            logger.info("[summarize_agent] Summary done. Resetting token window (prev=%d).", self.token_count)
             self.token_count = 0
             return result
         return _summarize
@@ -92,7 +92,7 @@ class ChatAgent(AgentProtocol):
     def _build_should_summarize(self):
         def should_summarize(state: AgentState) -> dict:
             if self.token_count >= self.config.max_tokens_before_summary:
-                print("[summarize_agent] Triggering summarization due to token limit (window_total >= max).")
+                logger.info("[summarize_agent] Triggering summarization due to token limit (window_total >= max).")
                 return {"summarize_decision": "yes"}
             return {"summarize_decision": "no"}
         return should_summarize
