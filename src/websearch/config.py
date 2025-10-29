@@ -1,7 +1,7 @@
-"""Configuration and state definitions for WebSearch agent.
+"""Configuration and state definitions for the WebSearch agent.
 
-This module defines the TypedDict state and dataclass configuration
-used throughout the WebSearch agent.
+This module defines the TypedDict state and dataclass configuration used
+throughout the WebSearch agent.
 """
 
 from __future__ import annotations
@@ -51,13 +51,16 @@ class SearchAgentConfig(AgentConfig):
         temperature: LLM temperature for response generation.
         num_ctx: Context window size for the LLM.
         max_categories: Maximum number of categories to use per query.
-    lang: Language preference for search results (e.g., "en-US", "en-GB").
+        lang: Language preference for search results (e.g., "en-US", "en-GB").
         safesearch: Safe search level (0=off, 1=moderate, 2=strict).
         timeout_s: Request timeout in seconds.
         retries: Number of retry attempts for failed Searx requests.
         backoff_base: Base multiplier for exponential backoff.
         engines_allow: Per-category engine allowlist (optional).
         engines_block: Per-category engine blocklist (optional).
+        pivot_to_english: When true, also run an English query for non-English inputs and merge results.
+        local_timezone: IANA timezone used when formatting dates in summaries.
+        searx_max_concurrency: Max number of concurrent Searx queries per agent instance.
     """
     searx_host: str = "http://192.168.30.100:8095"
     k: int = 30
@@ -69,6 +72,9 @@ class SearchAgentConfig(AgentConfig):
     backoff_base: float = 0.6
     engines_allow: dict[str, list[str]] | None = None
     engines_block: dict[str, list[str]] | None = None
+    pivot_to_english: bool = True
+    local_timezone: str = "America/Sao_Paulo"
+    searx_max_concurrency: int = 8
 
     def __post_init__(self):
         # Initialize base model config
@@ -84,5 +90,17 @@ class SearchAgentConfig(AgentConfig):
         if (val := os.getenv("SEARX_TIMEOUT_S")):
             try:
                 self.timeout_s = float(val)
+            except ValueError:
+                pass
+        # Pivot to English flag
+        if (val := os.getenv("SEARCH_PIVOT_TO_EN")) is not None:
+            v = val.strip().lower()
+            self.pivot_to_english = v in {"1", "true", "yes", "y", "on"}
+        # Local timezone for summaries
+        self.local_timezone = os.getenv("LOCAL_TIMEZONE", self.local_timezone)
+        # Concurrency override
+        if (val := os.getenv("SEARCH_MAX_CONCURRENCY")):
+            try:
+                self.searx_max_concurrency = max(1, int(val))
             except ValueError:
                 pass

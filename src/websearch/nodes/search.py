@@ -7,6 +7,7 @@ import logging
 import re
 import time
 from json import JSONDecodeError
+import random
 from typing import Any, Callable, Optional
 
 from langchain_core.runnables import RunnableConfig, RunnableLambda
@@ -31,14 +32,20 @@ def build_web_search_node(deps: NodeDependencies) -> RunnableLambda:
 
     search_client = deps.search_wrapper_factory()
 
+    # Cap concurrent Searx calls per agent to protect the backend
+    _sema = asyncio.Semaphore(max(1, deps.config.searx_max_concurrency))
+
     async def searx_call_with_retry(call: Callable[[], list[dict[str, Any]]]):
         for attempt in range(deps.config.retries + 1):
             try:
-                return await asyncio.to_thread(call)
+                async with _sema:
+                    return await asyncio.to_thread(call)
             except (RequestException, JSONDecodeError, ValueError) as exc:
                 if attempt >= deps.config.retries:
                     raise
+                # Exponential backoff with jitter (0.8x–1.2x)
                 delay = deps.config.backoff_base * (2 ** attempt)
+                delay *= (0.8 + random.random() * 0.4)
                 logger.warning(
                     "[websearch] retry=%d delay=%.2fs error=%s", attempt + 1, delay, type(exc).__name__
                 )

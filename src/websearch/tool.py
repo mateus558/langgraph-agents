@@ -147,7 +147,7 @@ def websearch(
         categories_per_query: dict[str, Any] = {}
 
         def _result_key(item: dict[str, Any]) -> str:
-            url = (item.get("url") or "").strip()
+            url = (item.get("link") or item.get("url") or "").strip()
             if url:
                 return url
             # fallback: title+snippet signature
@@ -183,14 +183,20 @@ def websearch(
         sample_size = min(k, len(merged_results))
         sampled_results = random.sample(merged_results, sample_size)
 
-        # Summarize with the same model family used by the graph
-        model = init_chat_model(
-            DEFAULT_MODEL_NAME,
-            model_provider="ollama",
-            base_url=DEFAULT_BASE_URL,
-            temperature=DEFAULT_TEMPERATURE,
-            kwargs={"num_ctx": DEFAULT_NUM_CTX},
-        )
+        # Summarize with the same model used by the agent when available
+        model = None
+        try:
+            model = _get_agent(k=k).get_model()
+        except Exception:
+            model = None
+        if model is None:
+            model = init_chat_model(
+                DEFAULT_MODEL_NAME,
+                model_provider="ollama",
+                base_url=DEFAULT_BASE_URL,
+                temperature=DEFAULT_TEMPERATURE,
+                kwargs={"num_ctx": DEFAULT_NUM_CTX},
+            )
 
         sys = SystemMessage(
             content=(
@@ -205,10 +211,11 @@ def websearch(
         else:
             qlabel = "Queries:\n- " + "\n- ".join(qlist) + "\n\n"
 
-        lines = [
-            f"{i+1}. {r.get('title','')} — {r.get('url','')}\n{r.get('snippet','')}"
-            for i, r in enumerate(sampled_results)
-        ]
+        def _line_for(idx: int, result: dict[str, Any]) -> str:
+            url = (result.get("link") or result.get("url") or "").strip()
+            return f"{idx}. {result.get('title','')} — {url}\n{result.get('snippet','')}"
+
+        lines = [_line_for(i + 1, r) for i, r in enumerate(sampled_results)]
         prompt = qlabel + "Results (sampled):\n" + "\n".join(lines)
 
         out = model.invoke([sys, HumanMessage(content=prompt)])

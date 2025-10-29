@@ -79,7 +79,8 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             return self._local_tz
         async with self._tz_lock:
             if self._local_tz is None:
-                self._local_tz = await asyncio.to_thread(ZoneInfo, "America/Sao_Paulo")
+                tz_name = getattr(self.config, "local_timezone", "America/Sao_Paulo")
+                self._local_tz = await asyncio.to_thread(ZoneInfo, tz_name)
         return self._local_tz
 
 
@@ -120,7 +121,11 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
         )
 
         graph: StateGraph[SearchState] = StateGraph(SearchState)
-        graph.add_node("categorize_query", build_categorize_node(deps))
+        graph.add_node(
+            "categorize_query",
+            build_categorize_node(deps),
+            cache_policy=CachePolicy(ttl=60),
+        )
         graph.add_node(
             "web_search",
             build_web_search_node(deps),
@@ -174,8 +179,9 @@ def _create_default_agent():
         retries=int(os.getenv("SEARCH_RETRIES", "2")),
         backoff_base=float(os.getenv("SEARCH_BACKOFF_BASE", "1.0")),
         temperature=float(os.getenv("SEARCH_TEMPERATURE", "0.5")),
+        pivot_to_english=_to_bool(os.getenv("SEARCH_PIVOT_TO_EN", "1"), True),
+        local_timezone=os.getenv("LOCAL_TIMEZONE", "America/Sao_Paulo"),
     )
-    setattr(config, "pivot_to_english", _to_bool(os.getenv("SEARCH_PIVOT_TO_EN", "1"), True))
 
     agent = WebSearchAgent(config)
     return agent.agent

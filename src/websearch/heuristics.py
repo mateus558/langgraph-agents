@@ -103,4 +103,5 @@ class CategoryResponse(BaseModel):
         v2 = sanitize_categories(v)
         if not v2:
             return ["general"]
-        return v2[:3]  # Limit to top 3 categories
+        # Do not enforce a hard cap here; caller can slice to desired limit
+        return v2
