@@ -33,4 +33,7 @@ HEURISTIC_PATTERNS: list[tuple[str, Iterable[str], int]] = [
     (r"\b(inflation|gdp|econom(y|ics)|finance|stocks?|ticker|ibovespa|nasdaq|usd/brl|interest rate)\b", ["economics"], 2),
     (r"\b(football|soccer|nba|nfl|ufc|f1|formula 1|premier league|score|sports?)\b", ["sports"], 2),
     (r"\b(course|tutorial|how to|learn|mooc|udemy|coursera|khan academy|lesson)\b", ["education"], 1),
+    # Entertainment/Media queries (anime, series, movies, shows)
+    (r"\b(episódio|episode|temporada|season|série|series|show|anime|manga|filme|movie|próximo|next|when|quando)\b", ["videos", "news"], 4),
+    (r"\b(netflix|hulu|disney\+|crunchyroll|prime video|hbo|streaming)\b", ["videos", "news"], 3),
 ]

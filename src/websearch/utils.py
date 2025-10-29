@@ -39,18 +39,58 @@ def canonical_url(url: str) -> str:
 def normalize_urls(results: list[dict]) -> list[dict]:
     """Normalize URLs in search results.
 
-    Applies canonical_url() to the 'link' field of each result.
+    Applies canonical_url() to a URL field and ensures it is in 'link'.
+    Many SearxNG engines return different field names for URLs:
+    - Standard: 'link', 'url', 'href'
+    - Instant answers/special results: 'Result' (often contains a nested dict)
+    
+    We coerce whichever is present into 'link' for downstream processing.
+    If 'Result' is found, we try to extract a URL from it.
+
     Modifies results in place.
 
     Args:
-        results: List of result dictionaries with 'link' field.
+        results: List of result dictionaries possibly containing a URL field.
 
     Returns:
-        The same list with normalized URLs (modified in place).
+        The same list with normalized URLs in 'link' (modified in place).
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     for r in results:
-        if "link" in r and r["link"]:
-            r["link"] = canonical_url(r["link"])
+        # Standard fields
+        link = r.get("link") or r.get("url") or r.get("href")
+        
+        # SearxNG instant answer/special result format
+        if not link and "Result" in r:
+            result_val = r.get("Result")
+            # Result might be a dict with URL inside, or a string URL
+            if isinstance(result_val, dict):
+                logger.debug("normalize_urls: Result is dict with keys: %s", list(result_val.keys()))
+                link = result_val.get("url") or result_val.get("link") or result_val.get("href")
+            elif isinstance(result_val, str):
+                logger.debug("normalize_urls: Result is string: %s", result_val[:100])
+                if result_val.startswith("http"):
+                    link = result_val
+        
+        if link:
+            r["link"] = canonical_url(str(link))
+            # Also extract title and snippet from Result if present
+            if "Result" in r and isinstance(r["Result"], dict):
+                if "title" not in r or not r["title"]:
+                    r["title"] = r["Result"].get("title", "")
+                if "snippet" not in r or not r["snippet"]:
+                    r["snippet"] = r["Result"].get("snippet") or r["Result"].get("content", "")
+        else:
+            # Debug: log results without recognizable URL fields
+            logger.warning(
+                "normalize_urls: result has no extractable URL. Keys: %s, Result type: %s, Result value: %s",
+                list(r.keys()), 
+                type(r.get("Result")).__name__ if "Result" in r else "N/A",
+                str(r.get("Result"))[:200] if "Result" in r else "N/A"
+            )
+    
     return results
 
 

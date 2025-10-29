@@ -13,21 +13,30 @@ from typing_extensions import TypedDict
 
 from core.contracts import AgentConfig
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 
 class SearchState(TypedDict):
     """State for the WebSearch agent graph.
 
     Attributes:
-        messages: List of messages exchanged during the search process.
         query: The search query string.
         categories: List of Searx categories determined for the query.
         results: List of search results from Searx.
         summary: Final LLM-generated summary of the search results.
+        lang: Detected or configured language code.
+        query_en: English-translated query for categorization.
     """
     query: str
     categories: list[str] | None
     results: list[dict[str, object]] | None
     summary: str | None
+    lang: str | None
+    query_en: str | None
 
 
 @dataclass
@@ -50,9 +59,9 @@ class SearchAgentConfig(AgentConfig):
         engines_allow: Per-category engine allowlist (optional).
         engines_block: Per-category engine blocklist (optional).
     """
-    searx_host: str = "http://localhost:8095"
-    k: int = 8
-    max_categories: int = 3
+    searx_host: str = "http://192.168.30.100:8095"
+    k: int = 30
+    max_categories: int = 4
     lang: str | None = "en-US"
     safesearch: int = 1
     timeout_s: float = 8.0
