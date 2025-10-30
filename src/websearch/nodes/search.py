@@ -17,6 +17,7 @@ from websearch.config import SearchState
 from websearch.utils import (
     dedupe_results,
     diversify_topk,
+    diversify_topk_mmr,
     normalize_urls,
     pick_time_range,
     to_searx_locale,
@@ -54,10 +55,12 @@ def build_web_search_node(deps: NodeDependencies) -> RunnableLambda:
 
     def build_kwargs(lang_code: Optional[str], categories: list[str]) -> dict[str, Any]:
         kw: dict[str, Any] = {
-            "categories": categories,
             "num_results": deps.config.k * 2,
             "safesearch": deps.config.safesearch,
         }
+        # Only include categories if non-empty; empty means let SearxNG choose defaults
+        if categories:
+            kw["categories"] = categories
         if lang_code:
             kw["language"] = lang_code
         tr = pick_time_range(categories)
@@ -76,9 +79,16 @@ def build_web_search_node(deps: NodeDependencies) -> RunnableLambda:
         return kw
 
     async def run_query(query: str, lang_code: Optional[str], categories: list[str]) -> list[dict[str, Any]]:
-        return await searx_call_with_retry(
-            lambda: search_client.results(query, **build_kwargs(lang_code, categories))
+        kw = build_kwargs(lang_code, categories)
+        logger.debug(
+            "[websearch] Searx call params: language=%s categories=%s time_range=%s engines=%s blocked=%s",
+            kw.get("language"),
+            kw.get("categories"),
+            kw.get("time_range"),
+            kw.get("engines"),
+            kw.get("blocked_engines"),
         )
+        return await searx_call_with_retry(lambda: search_client.results(query, **kw))
 
     async def _search(state: SearchState, config: RunnableConfig | None = None) -> dict[str, Any]:
         t0 = time.perf_counter()
@@ -130,12 +140,85 @@ def build_web_search_node(deps: NodeDependencies) -> RunnableLambda:
                 results_union = await pivot_queries(cats)
             else:
                 results_union = await plain_query(cats)
+            # If no results came back, try once without specifying a language filter
+            if not results_union:
+                try:
+                    logger.info("[websearch] No results from initial query, retrying without language filter")
+                    results_union = await run_query(q, None, cats)
+                    logger.info(
+                        "[websearch] No-language retry produced %d results", len(results_union)
+                    )
+                except Exception as exc:  # pragma: no cover - best-effort retry
+                    logger.debug("[websearch] No-language retry failed: %s", exc)
+            # If still no results, try without categories (let Searx default)
+            if not results_union:
+                try:
+                    logger.info("[websearch] Still no results, retrying with no categories (defaults)")
+                    results_union = await run_query(q, lang_norm, [])
+                    logger.info(
+                        "[websearch] No-categories retry produced %d results", len(results_union)
+                    )
+                except Exception as exc:  # pragma: no cover - best-effort retry
+                    logger.debug("[websearch] No-categories retry failed: %s", exc)
+            # And as a final early step, try both no language and no categories together
+            if not results_union:
+                try:
+                    logger.info("[websearch] Final early retry: no language and no categories")
+                    results_union = await run_query(q, None, [])
+                    logger.info(
+                        "[websearch] No-lang+no-cats retry produced %d results", len(results_union)
+                    )
+                except Exception as exc:  # pragma: no cover - best-effort retry
+                    logger.debug("[websearch] No-lang+no-cats retry failed: %s", exc)
         except (RequestException, JSONDecodeError, ValueError) as exc:
             dt = time.perf_counter() - t0
             logger.error("[websearch] node=web_search error=%s dt=%.3fs", type(exc).__name__, dt)
             return {"results": [], "categories": cats, "lang": lang_display}
 
-        cleaned = diversify_topk(dedupe_results(normalize_urls(results_union)), k=deps.config.k)
+        # Apply MMR reranking if embedder is available, otherwise use domain diversification
+        try:
+            cleaned = await diversify_topk_mmr(
+                dedupe_results(normalize_urls(results_union)),
+                k=deps.config.k,
+                query=q,
+                embedder=deps.embedder,
+                lambda_mult=deps.config.mmr_lambda,
+                fetch_k=deps.config.mmr_fetch_k,
+                use_vectorstore_mmr=deps.config.use_vectorstore_mmr,
+            )
+        except Exception as exc:
+            logger.warning("[websearch] MMR reranking failed: %s, using fallback", exc)
+            cleaned = diversify_topk(dedupe_results(normalize_urls(results_union)), k=deps.config.k)
+
+        # If we still have no cleaned results but received raw results, try a last-ditch retry
+        # without specifying a language filter. Some engines behave better without 'language'.
+        if results_union and not cleaned:
+            try:
+                logger.info("[websearch] Retry without language filter as cleaned results are empty")
+                results_union = await run_query(q, None, cats)
+                cleaned = diversify_topk(dedupe_results(normalize_urls(results_union)), k=deps.config.k)
+                logger.info("[websearch] Retry without language filter produced %d results", len(cleaned))
+            except Exception as exc:  # pragma: no cover - best-effort retry
+                logger.debug("[websearch] Retry without language filter failed: %s", exc)
+
+        # If still empty, attempt alternative language fallbacks (en/pt) best-effort.
+        # This helps when detection misfires (e.g., Portuguese culinary queries without diacritics).
+        if not cleaned:
+            alt_langs: list[str] = []
+            # Prefer trying English and Portuguese explicitly
+            for code in ("en", "pt"):
+                if lang_norm != code:
+                    alt_langs.append(code)
+
+            for alt in alt_langs:
+                try:
+                    alt_results = await run_query(q, alt, cats)
+                    results_union += alt_results
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+
+            if results_union and not cleaned:
+                cleaned = diversify_topk(dedupe_results(normalize_urls(results_union)), k=deps.config.k)
 
         if not cleaned and "general" in cats and len(cats) > 1:
             logger.warning("[websearch] No results with categories %s, retrying without 'general'", cats)
@@ -166,10 +249,18 @@ def build_web_search_node(deps: NodeDependencies) -> RunnableLambda:
         )
 
         if results_union and not cleaned:
-            logger.warning(
-                "[websearch] Raw results present but cleaned is empty. Sample raw result keys: %s",
-                list(results_union[0].keys()) if results_union else "N/A",
+            # Provide more context: how many raw results actually have a usable URL after normalization
+            with_link = sum(1 for r in results_union if r.get("link"))
+            total = len(results_union)
+            msg = (
+                "[websearch] Raw results present but cleaned is empty. "
+                f"with_link={with_link}/{total} sample_keys={list(results_union[0].keys()) if results_union else 'N/A'}"
             )
+            if with_link == 0:
+                # Likely instant answers/special results without URLs from some engines
+                logger.info(msg)
+            else:
+                logger.warning(msg)
 
         return {"results": cleaned, "categories": cats, "lang": lang_display}
 

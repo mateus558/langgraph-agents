@@ -61,6 +61,10 @@ class SearchAgentConfig(AgentConfig):
         pivot_to_english: When true, also run an English query for non-English inputs and merge results.
         local_timezone: IANA timezone used when formatting dates in summaries.
         searx_max_concurrency: Max number of concurrent Searx queries per agent instance.
+        use_vectorstore_mmr: Enable FAISS-based MMR reranking when embedder available (default True).
+        mmr_lambda: MMR diversity parameter (0=max diversity, 1=max relevance, default 0.55).
+        mmr_fetch_k: Number of candidates to fetch before MMR filtering (default 50).
+        embedder: Optional embeddings model for MMR reranking.
     """
     searx_host: str = "http://192.168.30.100:8095"
     k: int = 30
@@ -75,6 +79,10 @@ class SearchAgentConfig(AgentConfig):
     pivot_to_english: bool = True
     local_timezone: str = "America/Sao_Paulo"
     searx_max_concurrency: int = 8
+    use_vectorstore_mmr: bool = True
+    mmr_lambda: float = 0.55
+    mmr_fetch_k: int = 50
+    embedder: object | None = None
 
     def __post_init__(self):
         # Initialize base model config
@@ -102,5 +110,19 @@ class SearchAgentConfig(AgentConfig):
         if (val := os.getenv("SEARCH_MAX_CONCURRENCY")):
             try:
                 self.searx_max_concurrency = max(1, int(val))
+            except ValueError:
+                pass
+        # MMR config overrides
+        if (val := os.getenv("USE_VECTORSTORE_MMR")) is not None:
+            v = val.strip().lower()
+            self.use_vectorstore_mmr = v in {"1", "true", "yes", "y", "on"}
+        if (val := os.getenv("MMR_LAMBDA")):
+            try:
+                self.mmr_lambda = max(0.0, min(1.0, float(val)))
+            except ValueError:
+                pass
+        if (val := os.getenv("MMR_FETCH_K")):
+            try:
+                self.mmr_fetch_k = max(1, int(val))
             except ValueError:
                 pass

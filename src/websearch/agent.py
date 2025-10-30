@@ -48,6 +48,10 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
         if getattr(self.config, "model", None) is None:
             self.config.model = cast(BaseChatModel, self._build_model())
 
+        # Initialize embedder if not already set
+        if self.config.embedder is None:
+            self.config.embedder = self._build_embedder()
+
         self._langdet = LangDetector()
         self._local_tz: Optional[ZoneInfo] = None
         self._tz_lock = asyncio.Lock()
@@ -70,6 +74,61 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             temperature=self.config.temperature,
             num_ctx=self.config.num_ctx,
         )
+
+    def _build_embedder(self) -> object | None:
+        """Initialize embedder for MMR reranking.
+
+        Tries to create embeddings model with graceful fallback if dependencies missing.
+        Priority order:
+        1. HuggingFaceEmbeddings (intfloat/e5-small-v2) - local, fast
+        2. OpenAIEmbeddings (text-embedding-3-small) - if API key available
+        3. None - fallback to domain-based diversification
+
+        Returns:
+            Embeddings model instance or None if unavailable.
+        """
+        import os
+
+        # Try HuggingFace embeddings first (local, no API key needed)
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+
+            # Auto-detect GPU availability
+            try:
+                import torch # type: ignore
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                logger.info("[websearch] Initializing HuggingFaceEmbeddings for MMR (device: %s)", device)
+            except ImportError:
+                device = "cpu"
+                logger.info("[websearch] Initializing HuggingFaceEmbeddings for MMR (device: cpu, torch not available)")
+
+            # Allow model override via environment variable
+            model_name = os.getenv("EMBEDDINGS_MODEL_NAME", "intfloat/e5-base-v2")
+            
+            return HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs={"device": device},
+                encode_kwargs={"normalize_embeddings": True},
+            )
+        except ImportError:
+            logger.debug("[websearch] langchain-huggingface not available")
+        except Exception as exc:
+            logger.debug("[websearch] HuggingFaceEmbeddings init failed: %s", exc)
+
+        # Try OpenAI embeddings if API key available
+        if os.getenv("OPENAI_API_KEY"):
+            try:
+                from langchain_openai import OpenAIEmbeddings
+
+                logger.info("[websearch] Initializing OpenAIEmbeddings for MMR")
+                return OpenAIEmbeddings(model="text-embedding-3-small")
+            except ImportError:
+                logger.debug("[websearch] langchain-openai not available")
+            except Exception as exc:
+                logger.debug("[websearch] OpenAIEmbeddings init failed: %s", exc)
+
+        logger.info("[websearch] No embeddings model available, MMR will use fallback diversification")
+        return None
 
     def get_model(self) -> BaseChatModel | None:
         return getattr(self.config, "model", None)
@@ -118,6 +177,7 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             get_model=self.get_model,
             get_local_tz=self._get_local_tz,
             search_wrapper_factory=self._search_wrapper_factory,
+            embedder=self.config.embedder,
         )
 
         graph: StateGraph[SearchState] = StateGraph(SearchState)

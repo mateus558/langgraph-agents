@@ -13,6 +13,7 @@ A production-ready LangGraph server with AI agents for conversational chat and i
 - **Web Search Agent**: Intelligent web search using SearxNG
   - LLM-powered query categorization
   - Multi-category search with result deduplication
+  - **MMR reranking** for relevance and diversity (new!)
   - Source-backed summarization with URL whitelist
 
 ## Deployment Options
@@ -229,7 +230,19 @@ The search agent follows a three-stage pipeline:
 
 1. **Categorize**: Uses heuristics + LLM to determine search categories
 2. **Search**: Queries SearxNG with optimized parameters per category
-3. **Summarize**: Generates source-backed summary with URL whitelist
+3. **Rerank**: Applies MMR (Maximal Marginal Relevance) for diversity
+4. **Summarize**: Generates source-backed summary with URL whitelist
+
+#### MMR Reranking (New!)
+
+The agent now supports intelligent result reranking using MMR to balance relevance and diversity:
+
+- **Three-tier strategy**: FAISS → Standalone MMR → Domain diversification
+- **Async-safe**: Non-blocking embedding generation
+- **Configurable**: Adjust via `MMR_LAMBDA` (0=diversity, 1=relevance)
+- **Graceful fallback**: Works with or without embeddings
+
+See **[docs/MMR_RERANKING.md](docs/MMR_RERANKING.md)** for complete guide.
 
 ## Configuration
 
@@ -243,6 +256,10 @@ The search agent follows a three-stage pipeline:
 | `CHAT_MAX_TOKENS_BEFORE_SUMMARY` | Token limit | `4000` |
 | `SEARX_HOST` | SearxNG instance URL | `http://localhost:8095` |
 | `SEARCH_K` | Results to return | `8` |
+| `USE_VECTORSTORE_MMR` | Enable MMR reranking | `true` |
+| `MMR_LAMBDA` | Relevance/diversity balance | `0.55` |
+| `MMR_FETCH_K` | Candidates before filtering | `50` |
+| `EMBEDDINGS_MODEL_NAME` | HuggingFace embedding model | `intfloat/e5-small-v2` |
 
 See `.env.example` for complete list.
 

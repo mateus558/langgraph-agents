@@ -28,6 +28,7 @@ class NodeDependencies:
     get_model: Callable[[], BaseChatModel | None]
     get_local_tz: Callable[[], Awaitable[ZoneInfo]]
     search_wrapper_factory: Callable[[], SupportsSearch]
+    embedder: object | None = None
 
 
 __all__ = ["NodeDependencies", "SupportsSearch"]

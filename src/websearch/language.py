@@ -69,7 +69,17 @@ class LangDetector:
                 pass
 
         lowered = txt.lower()
-        if any(ch in lowered for ch in "ãõáéíóúçâêô") or "quando" in lowered or "próximo" in lowered:
+        # Portuguese heuristic: diacritics or common PT terms
+        if (
+            any(ch in lowered for ch in "ãõáéíóúçâêô")
+            or "quando" in lowered
+            or "próximo" in lowered
+            or "receita" in lowered
+            or "ensopado" in lowered
+            or "cozido" in lowered
+            or "culinaria" in lowered
+            or "culinária" in lowered
+        ):
             return "pt"
         if "¿" in lowered or "¡" in lowered or "cuándo" in lowered:
             return "es"
