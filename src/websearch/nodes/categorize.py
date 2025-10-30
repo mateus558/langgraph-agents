@@ -46,7 +46,19 @@ async def _structured_categories(model, query_en: str, hints: list[str], limit: 
     try:
         resp = await model_struct.ainvoke([_SYS_PROMPT, *_FEWSHOT, user_msg])  # type: ignore[attr-defined]
     except AttributeError:
-        resp = await asyncio.to_thread(model_struct.invoke, [_SYS_PROMPT, *_FEWSHOT, user_msg])
+        # Fallbacks for model implementations that don't provide `ainvoke`.
+        # `invoke` can be either sync or async depending on the implementation,
+        # so handle both cases safely.
+        invoke = getattr(model_struct, "invoke", None)
+        if invoke is None:
+            # Re-raise original AttributeError if no invoke method exists
+            raise
+        # If invoke is an async coroutine function, await it directly.
+        if asyncio.iscoroutinefunction(invoke):
+            resp = await invoke([_SYS_PROMPT, *_FEWSHOT, user_msg])
+        else:
+            # Otherwise run the blocking invoke in a thread to avoid blocking the event loop.
+            resp = await asyncio.to_thread(invoke, [_SYS_PROMPT, *_FEWSHOT, user_msg])
     cats = (getattr(resp, "categories", None) or [])
     cats = [c for c in cats if c in ALLOWED_CATEGORIES]
     cats = (cats or ["general"])[: max(1, limit)]

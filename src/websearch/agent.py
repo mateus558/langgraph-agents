@@ -232,7 +232,7 @@ def _create_default_agent():
         model_name=os.getenv("MODEL_NAME") or os.getenv("WEBSEARCH_MODEL_NAME", "llama3.1"),
         base_url=os.getenv("LLM_BASE_URL") or os.getenv("BASE_URL"),
         searx_host=os.getenv("SEARX_HOST", "http://192.168.30.100:8095"),
-        k=int(os.getenv("SEARCH_K", "30")),
+        k=int(os.getenv("SEARCH_K", "20")),
         max_categories=int(os.getenv("SEARCH_MAX_CATEGORIES", "3")),
         safesearch=int(os.getenv("SEARCH_SAFESEARCH", "1")),
         lang=os.getenv("SEARCH_LANG", "auto"),
