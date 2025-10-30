@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.utils.symindex import SymindexParseError, build_semantic_index
+from src.symindex import SymindexParseError, build_semantic_index
 
 
 def test_syntax_error_raises_without_tolerance():

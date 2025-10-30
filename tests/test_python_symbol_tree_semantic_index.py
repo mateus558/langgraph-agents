@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-from src.utils.symindex import ClassUnit, FunctionUnit, PropertyUnit, build_semantic_index
+from src.symindex import ClassUnit, FunctionUnit, PropertyUnit, build_semantic_index
 
 
 def _sample_source() -> str:
