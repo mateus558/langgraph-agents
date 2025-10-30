@@ -9,6 +9,7 @@ ADD . /deps/ai-server
 # -- Installing all local dependencies --
 RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .);             fi;         done
 # -- End of local dependencies install --
+ENV LANGGRAPH_AUTH='{"path": "src/security/auth.py:auth"}'
 ENV LANGSERVE_GRAPHS='{"chatagent": "/deps/ai-server/src/chatagent/agent.py:chatagent", "websearch": "/deps/ai-server/src/websearch/agent.py:websearch"}'
 
 

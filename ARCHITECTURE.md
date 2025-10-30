@@ -1,6 +1,6 @@
 # Architecture
 
-Generated: 2025-10-28 16:36:32
+Generated: 2025-10-30 20:21:44
 
 This document describes the system architecture and the agent graphs used in the project.
 
