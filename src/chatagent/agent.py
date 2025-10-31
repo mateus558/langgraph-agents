@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from zoneinfo import ZoneInfo
+from datetime import timezone as dt_timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dataclasses import dataclass
 
 from langchain_core.messages import SystemMessage, AIMessage
@@ -73,7 +74,15 @@ class ChatAgent(AgentMixin):
 
         # Timezone for clock/timestamps (ensure non-None for ZoneInfo)
         tz_name = self.config.tz_name or "America/Sao_Paulo"
-        self.tz = ZoneInfo(tz_name)
+        try:
+            self.tz = ZoneInfo(tz_name)
+        except ZoneInfoNotFoundError:
+            logger.warning(
+                "chatagent.timezone_not_found falling back to UTC",
+                extra={"requested_tz": tz_name},
+            )
+            self.tz = dt_timezone.utc
+            self.config.tz_name = "UTC"
 
         self.build()
 

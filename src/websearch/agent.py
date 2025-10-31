@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timezone as dt_timezone, tzinfo
 from typing import Any, Optional, cast
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_community.utilities import SearxSearchWrapper
 from langchain_core.language_models import BaseChatModel
@@ -54,7 +55,7 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             self.config.embedder = self._build_embedder()
 
         self._langdet = LangDetector()
-        self._local_tz: Optional[ZoneInfo] = None
+        self._local_tz: Optional[tzinfo] = None
         self._tz_lock = asyncio.Lock()
         self._search_wrapper_cls = SearxSearchWrapper
 
@@ -134,7 +135,7 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
     def get_model(self) -> BaseChatModel | None:
         return getattr(self.config, "model", None)
 
-    async def _get_local_tz(self) -> ZoneInfo:
+    async def _get_local_tz(self) -> tzinfo:
         if self._local_tz is not None:
             return self._local_tz
         async with self._tz_lock:
@@ -145,7 +146,25 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
                 tz_name = getattr(self.config, "local_timezone", None)
                 if not tz_name:
                     tz_name = getattr(get_settings(), "timezone", "America/Sao_Paulo")
-                self._local_tz = await asyncio.to_thread(ZoneInfo, tz_name)
+                def _load_zone(name: str):
+                    try:
+                        return ZoneInfo(name)
+                    except ZoneInfoNotFoundError:
+                        logger.warning(
+                            "[websearch] timezone_not_found falling back to UTC",
+                            extra={"requested_tz": name},
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "[websearch] timezone_load_error falling back to UTC: %s",
+                            exc,
+                            extra={"requested_tz": name},
+                        )
+                    # Update config to reflect fallback
+                    self.config.local_timezone = "UTC"
+                    return dt_timezone.utc
+
+                self._local_tz = await asyncio.to_thread(_load_zone, tz_name)
         return self._local_tz
 
 

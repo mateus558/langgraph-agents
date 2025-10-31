@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import tzinfo
 from typing import Any, Awaitable, Callable, Protocol
-from zoneinfo import ZoneInfo
-
 from langchain_core.language_models import BaseChatModel
 
 from websearch.config import SearchAgentConfig
@@ -26,7 +25,7 @@ class NodeDependencies:
     translate_query: Callable[[str, str], Awaitable[str]]
     call_llm: Callable[[list[Any], float], Awaitable[Any]]
     get_model: Callable[[], BaseChatModel | None]
-    get_local_tz: Callable[[], Awaitable[ZoneInfo]]
+    get_local_tz: Callable[[], Awaitable[tzinfo]]
     search_wrapper_factory: Callable[[], SupportsSearch]
     embedder: object | None = None
 

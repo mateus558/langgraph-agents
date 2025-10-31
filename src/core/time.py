@@ -11,20 +11,32 @@ from datetime import datetime, timezone
 from typing import Any
 
 try:
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 except Exception:  # pragma: no cover - Python <3.9 not supported here
     ZoneInfo = None  # type: ignore[assignment]
+    ZoneInfoNotFoundError = Exception  # type: ignore[assignment]
 
 
 def _ensure_zoneinfo(tz: Any | None) -> Any:
+    """Coerce value into a tzinfo, defaulting to UTC when unavailable."""
     if tz is None:
         return ZoneInfo("UTC") if ZoneInfo else timezone.utc
+    if ZoneInfo and isinstance(tz, ZoneInfo):
+        return tz
+    if hasattr(tz, "tzname"):
+        return tz
     if isinstance(tz, str):
         try:
-            return ZoneInfo(tz) if ZoneInfo else tz
+            if ZoneInfo:
+                return ZoneInfo(tz)
+        except ZoneInfoNotFoundError:
+            pass
         except Exception:
-            return ZoneInfo("UTC") if ZoneInfo else timezone.utc
-    return tz
+            pass
+        return ZoneInfo("UTC") if ZoneInfo else timezone.utc
+    if hasattr(tz, "utcoffset"):
+        return tz
+    return ZoneInfo("UTC") if ZoneInfo else timezone.utc
 
 
 def build_chat_clock_vars(tz: Any | None) -> dict[str, str]:
@@ -75,4 +87,3 @@ def build_web_time_vars(tz: Any | None) -> dict[str, str]:
 
 
 __all__ = ["build_chat_clock_vars", "build_web_time_vars"]
-
