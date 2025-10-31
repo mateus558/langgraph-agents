@@ -15,6 +15,7 @@ from langgraph.cache.memory import InMemoryCache
 
 from chatagent.config import AgentState
 from chatagent.summarizer import OllamaSummarizer
+from chatagent.prompts import ASSISTANT_SYSTEM_PROMPT
 from config import get_settings
 from core.contracts import AgentMixin, ModelFactory
 from utils.messages import TokenEstimator, coerce_message_content
@@ -93,12 +94,7 @@ class ChatAgent(AgentMixin):
             num_ctx=self.config.num_ctx,
         )
 
-        sys_tmpl = (
-            "{clock}\n"
-            "You are a helpful AI assistant. Be friendly and professional. "
-            "Avoid long responses unless needed and reply in the user's language.\n"
-            "Conversation Summary: {summary}\n"
-        )
+        # System message rendered via shared prompt abstraction
 
         async def _generate(state: AgentState):
             # Observability context
@@ -114,7 +110,10 @@ class ChatAgent(AgentMixin):
                     "Use this as the single source of truth for 'today', 'tomorrow', etc."
                 )
             
-            sys = SystemMessage(content=sys_tmpl.format(clock=clock, summary=state.get("summary") or ""))
+            sys_text = ASSISTANT_SYSTEM_PROMPT.format_system(
+                clock=clock, summary=state.get("summary") or ""
+            ) or ""
+            sys = SystemMessage(content=sys_text)
 
             # Token estimate (input)
             input_tokens = self._tokenizer.count_messages([sys, *msgs])

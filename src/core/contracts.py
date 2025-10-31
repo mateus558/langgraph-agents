@@ -44,7 +44,9 @@ class PromptProtocol(Protocol):
 
     id: str
     version: str
-    prompt: str
+
+    @property
+    def prompt(self) -> str: ...
 
     def format(self, **kwargs: Any) -> str: ...
     def messages(self, **kwargs: Any) -> list[Any]: ...

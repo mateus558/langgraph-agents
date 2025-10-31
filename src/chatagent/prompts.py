@@ -9,6 +9,27 @@ from langchain_core.messages import BaseMessage
 from core.prompts import ChatPrompt
 
 
+# ---------------------------
+# Chat agent system prompt
+# ---------------------------
+
+# The chat agent composes a System message plus the live conversation messages
+# from state. We use ChatPrompt only to render the System content.
+ASSISTANT_SYSTEM_PROMPT = ChatPrompt(
+    id="chatagent.system",
+    version="1.0.0",
+    system_template=(
+        "{clock}\n"
+        "You are a helpful AI assistant. Be friendly and professional. "
+        "Avoid long responses unless needed and reply in the user's language.\n"
+        "Conversation Summary: {summary}\n"
+    ),
+    # We don't use the human template for this prompt in ChatAgent
+    user_template="",
+)
+
+__all__ = ["ASSISTANT_SYSTEM_PROMPT"] 
+
 SUMMARIZER_PROMPT = ChatPrompt(
     id="chatagent.summarize",
     version="1.0.0",
@@ -45,4 +66,4 @@ def build_summarizer_prompt(summary: str, messages_text: str) -> Tuple[str, Sequ
     return human_prompt, messages
 
 
-__all__ = ["SUMMARIZER_PROMPT", "build_summarizer_prompt"]
+__all__.extend(["SUMMARIZER_PROMPT", "build_summarizer_prompt"])
