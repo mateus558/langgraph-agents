@@ -7,8 +7,8 @@ prompt abstraction itself.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timezone, tzinfo
+from typing import Any, Tuple
 
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -87,3 +87,33 @@ def build_web_time_vars(tz: Any | None) -> dict[str, str]:
 
 
 __all__ = ["build_chat_clock_vars", "build_web_time_vars"]
+
+
+def resolve_timezone(name: str | None) -> Tuple[tzinfo, str, bool]:
+    """Resolve a timezone name to a tzinfo with a normalized name and fallback flag.
+
+    Args:
+        name: IANA time zone name (e.g., "America/Sao_Paulo"). If None or invalid,
+              UTC is returned as a safe default.
+
+    Returns:
+        (tz, normalized_name, fallback_applied)
+
+    Notes:
+        - No logging is performed here so callers can decide how/when to log.
+        - ``normalized_name`` will be the IANA key when available, otherwise "UTC".
+    """
+    # If ZoneInfo is available and a name is provided, try to resolve it.
+    if name and ZoneInfo:
+        try:
+            tz = ZoneInfo(name)
+            norm = getattr(tz, "key", name)
+            return tz, norm, False
+        except ZoneInfoNotFoundError:
+            pass
+        except Exception:
+            pass
+    # Fallback to UTC
+    return timezone.utc, "UTC", True
+
+__all__.append("resolve_timezone")

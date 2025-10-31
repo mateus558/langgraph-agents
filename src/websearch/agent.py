@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from datetime import timezone as dt_timezone, tzinfo
+from datetime import tzinfo
 from typing import Any, Optional, cast
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_community.utilities import SearxSearchWrapper
 from langchain_core.language_models import BaseChatModel
@@ -25,6 +23,7 @@ from websearch.nodes import (
     build_web_search_node,
 )
 from config import get_settings
+from core.time import resolve_timezone
 
 try:  # pragma: no cover - defensive import for optional dependency
     from dotenv import load_dotenv
@@ -55,8 +54,7 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             self.config.embedder = self._build_embedder()
 
         self._langdet = LangDetector()
-        self._local_tz: Optional[tzinfo] = None
-        self._tz_lock = asyncio.Lock()
+        self._local_tz: tzinfo = self._resolve_local_timezone()
         self._search_wrapper_cls = SearxSearchWrapper
 
         self.build()
@@ -135,36 +133,20 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
     def get_model(self) -> BaseChatModel | None:
         return getattr(self.config, "model", None)
 
-    async def _get_local_tz(self) -> tzinfo:
-        if self._local_tz is not None:
-            return self._local_tz
-        async with self._tz_lock:
-            if self._local_tz is None:
-                # Prefer explicit config.local_timezone; otherwise fall back to
-                # the global settings timezone (IANA name). This makes the
-                # agent follow the same configured timezone used elsewhere.
-                tz_name = getattr(self.config, "local_timezone", None)
-                if not tz_name:
-                    tz_name = getattr(get_settings(), "timezone", "America/Sao_Paulo")
-                def _load_zone(name: str):
-                    try:
-                        return ZoneInfo(name)
-                    except ZoneInfoNotFoundError:
-                        logger.warning(
-                            "[websearch] timezone_not_found falling back to UTC",
-                            extra={"requested_tz": name},
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "[websearch] timezone_load_error falling back to UTC: %s",
-                            exc,
-                            extra={"requested_tz": name},
-                        )
-                    # Update config to reflect fallback
-                    self.config.local_timezone = "UTC"
-                    return dt_timezone.utc
+    def _resolve_local_timezone(self) -> tzinfo:
+        """Resolve the agent's local timezone once during initialization."""
+        tz_in = getattr(self.config, "local_timezone", None) or getattr(
+            get_settings(), "timezone", "America/Sao_Paulo"
+        )
+        tz, norm, fell_back = resolve_timezone(tz_in)
+        self.config.local_timezone = norm
+        if fell_back:
+            logger.warning(
+                "[websearch] timezone_fallback", extra={"requested_tz": tz_in, "used": norm}
+            )
+        return tz
 
-                self._local_tz = await asyncio.to_thread(_load_zone, tz_name)
+    async def _get_local_tz(self) -> tzinfo:
         return self._local_tz
 
 

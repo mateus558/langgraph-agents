@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import timezone as dt_timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dataclasses import dataclass
 
 from langchain_core.messages import SystemMessage, AIMessage
@@ -16,7 +14,7 @@ from langgraph.cache.memory import InMemoryCache
 from chatagent.config import AgentState
 from chatagent.summarizer import OllamaSummarizer
 from chatagent.prompts import ASSISTANT_SYSTEM_PROMPT
-from core.time import build_chat_clock_vars
+from core.time import build_chat_clock_vars, resolve_timezone
 from config import get_settings
 from core.contracts import AgentMixin, ModelFactory
 from utils.messages import TokenEstimator, coerce_message_content
@@ -72,17 +70,13 @@ class ChatAgent(AgentMixin):
         # Token estimator (pure, cheap)
         self._tokenizer = TokenEstimator()
 
-        # Timezone for clock/timestamps (ensure non-None for ZoneInfo)
-        tz_name = self.config.tz_name or "America/Sao_Paulo"
-        try:
-            self.tz = ZoneInfo(tz_name)
-        except ZoneInfoNotFoundError:
-            logger.warning(
-                "chatagent.timezone_not_found falling back to UTC",
-                extra={"requested_tz": tz_name},
-            )
-            self.tz = dt_timezone.utc
-            self.config.tz_name = "UTC"
+        # Timezone for clock/timestamps (standardized resolution)
+        tz_in = self.config.tz_name or getattr(settings, "timezone", "America/Sao_Paulo")
+        tz, norm, fell_back = resolve_timezone(tz_in)
+        self.tz = tz
+        self.config.tz_name = norm
+        if fell_back:
+            logger.warning("chatagent.timezone_fallback", extra={"requested_tz": tz_in, "used": norm})
 
         self.build()
 
