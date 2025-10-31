@@ -39,7 +39,8 @@ class ChatAgentConfig:
     num_ctx: int | None = None
     # allow callers to choose streaming-by-default semantics if they want
     default_stream: bool = False
-    tz_name: str = "America/Sao_Paulo"
+    # If None, the agent will read the timezone from global settings
+    tz_name: str | None = None
 
 
 class ChatAgent(AgentMixin):
@@ -55,6 +56,10 @@ class ChatAgent(AgentMixin):
             self.config.model_name = settings.model_name
         if self.config.base_url is None:
             self.config.base_url = settings.base_url
+        # Make timezone configurable via global settings if not explicitly set
+        if self.config.tz_name is None:
+            # `Settings` provides a `timezone` attribute (IANA name)
+            self.config.tz_name = getattr(settings, "timezone", "America/Sao_Paulo")
 
         self.summarizer = OllamaSummarizer(
             model_id=self.config.model_name or get_settings().model_name,
@@ -64,8 +69,10 @@ class ChatAgent(AgentMixin):
 
         # Token estimator (pure, cheap)
         self._tokenizer = TokenEstimator()
-        self.tz = ZoneInfo(self.config.tz_name) 
 
+        # Timezone for clock/timestamps (ensure non-None for ZoneInfo)
+        tz_name = self.config.tz_name or "America/Sao_Paulo"
+        self.tz = ZoneInfo(tz_name)
 
         self.build()
 

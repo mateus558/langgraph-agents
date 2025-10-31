@@ -32,6 +32,8 @@ class Settings:
     model_name: str = "llama3.1"
     base_url: str | None = None
     embeddings_model: str = "nomic-embed-text"
+    # Timezone used across agents and helpers (IANA name)
+    timezone: str = "America/Sao_Paulo"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -42,10 +44,13 @@ class Settings:
         base_url_raw = os.getenv("LLM_BASE_URL", os.getenv("BASE_URL", defaults.base_url or ""))
         base_url = None if str(base_url_raw).strip().lower() in {"", "none", "null"} else base_url_raw
         embeddings_model = os.getenv("EMBEDDINGS_MODEL", defaults.embeddings_model)
+        # Allow overriding timezone via TIMEZONE or TZ_NAME env vars
+        timezone = os.getenv("TIMEZONE", os.getenv("TZ_NAME", defaults.timezone))
         return cls(
             model_name=model_name,
             base_url=base_url,
             embeddings_model=embeddings_model,
+            timezone=timezone,
         )
 
 

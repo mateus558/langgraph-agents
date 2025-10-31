@@ -23,6 +23,7 @@ from websearch.nodes import (
     build_summarize_node,
     build_web_search_node,
 )
+from config import get_settings
 
 try:  # pragma: no cover - defensive import for optional dependency
     from dotenv import load_dotenv
@@ -91,7 +92,7 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
 
         # Try HuggingFace embeddings first (local, no API key needed)
         try:
-            from langchain_huggingface import HuggingFaceEmbeddings
+            from langchain_huggingface import HuggingFaceEmbeddings # type: ignore
 
             # Auto-detect GPU availability
             try:
@@ -138,7 +139,12 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             return self._local_tz
         async with self._tz_lock:
             if self._local_tz is None:
-                tz_name = getattr(self.config, "local_timezone", "America/Sao_Paulo")
+                # Prefer explicit config.local_timezone; otherwise fall back to
+                # the global settings timezone (IANA name). This makes the
+                # agent follow the same configured timezone used elsewhere.
+                tz_name = getattr(self.config, "local_timezone", None)
+                if not tz_name:
+                    tz_name = getattr(get_settings(), "timezone", "America/Sao_Paulo")
                 self._local_tz = await asyncio.to_thread(ZoneInfo, tz_name)
         return self._local_tz
 
