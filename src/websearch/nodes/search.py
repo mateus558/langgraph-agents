@@ -18,7 +18,6 @@ from websearch.config import SearchState
 from websearch.utils import (
     dedupe_results,
     diversify_topk,
-    diversify_topk_mmr,
     normalize_urls,
     pick_time_range,
     to_searx_locale,
@@ -205,65 +204,6 @@ def build_web_search_node(deps: NodeDependencies) -> RunnableLambda:
                     logger.debug("[websearch] No-lang+no-cats retry failed: %s", exc)
             return results
 
-        def normalize_results(res: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            return dedupe_results(normalize_urls(res))
-
-        async def rerank_results(
-            results_union: list[dict[str, Any]],
-            categories: list[str],
-        ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
-            try:
-                cleaned = await diversify_topk_mmr(
-                    normalize_results(results_union),
-                    k=deps.config.k,
-                    query=q,
-                    embedder=deps.embedder,
-                    lambda_mult=deps.config.mmr_lambda,
-                    fetch_k=deps.config.mmr_fetch_k,
-                    use_vectorstore_mmr=deps.config.use_vectorstore_mmr,
-                )
-            except Exception as exc:
-                logger.warning("[websearch] MMR reranking failed: %s, using fallback", exc)
-                cleaned = diversify_topk(normalize_results(results_union), k=deps.config.k)
-
-            if results_union and not cleaned:
-                try:
-                    logger.info("[websearch] Retry without language filter as cleaned results are empty")
-                    results_union = await run_query(q, None, categories)
-                    cleaned = diversify_topk(normalize_results(results_union), k=deps.config.k)
-                    logger.info("[websearch] Retry without language filter produced %d results", len(cleaned))
-                except Exception as exc:  # pragma: no cover - best-effort retry
-                    logger.debug("[websearch] Retry without language filter failed: %s", exc)
-
-            if not cleaned:
-                alt_langs = [code for code in ("en", "pt") if plan.lang_norm != code]
-                for alt in alt_langs:
-                    try:
-                        alt_results = await run_query(q, alt, categories)
-                        results_union += alt_results
-                    except Exception:  # pragma: no cover - best-effort
-                        pass
-                if results_union and not cleaned:
-                    cleaned = diversify_topk(normalize_results(results_union), k=deps.config.k)
-
-            if not cleaned and "general" in categories and len(categories) > 1:
-                logger.warning("[websearch] No results with categories %s, retrying without 'general'", categories)
-                fallback_cats = [c for c in categories if c != "general"]
-                if fallback_cats:
-                    try:
-                        results_union = await primary_query(fallback_cats)
-                        cleaned = diversify_topk(normalize_results(results_union), k=deps.config.k)
-                        categories = fallback_cats
-                        logger.info(
-                            "[websearch] Fallback with cats=%s produced %d results",
-                            fallback_cats,
-                            len(cleaned),
-                        )
-                    except Exception as exc:  # pragma: no cover - fallback best-effort
-                        logger.warning("[websearch] Fallback failed: %s", exc)
-
-            return cleaned, results_union, categories
-
         try:
             results_union = await gather_results(cats)
         except (RequestException, JSONDecodeError, ValueError) as exc:
@@ -271,7 +211,48 @@ def build_web_search_node(deps: NodeDependencies) -> RunnableLambda:
             logger.error("[websearch] node=web_search error=%s dt=%.3fs", type(exc).__name__, dt)
             return {"results": [], "categories": cats, "lang": plan.display}
 
-        cleaned, results_union, cats = await rerank_results(results_union, cats)
+        async def apply_rerank(res: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            if deps.reranker:
+                return await deps.reranker.rerank(query=q, results=res, k=deps.config.k)
+            return diversify_topk(dedupe_results(normalize_urls(res)), k=deps.config.k)
+
+        cleaned = await apply_rerank(results_union)
+
+        if results_union and not cleaned:
+            try:
+                logger.info("[websearch] Retry without language filter as cleaned results are empty")
+                results_union = await run_query(q, None, cats)
+                cleaned = await apply_rerank(results_union)
+                logger.info("[websearch] Retry without language filter produced %d results", len(cleaned))
+            except Exception as exc:  # pragma: no cover - best-effort retry
+                logger.debug("[websearch] Retry without language filter failed: %s", exc)
+
+        if not cleaned:
+            alt_langs = [code for code in ("en", "pt") if plan.lang_norm != code]
+            for alt in alt_langs:
+                try:
+                    alt_results = await run_query(q, alt, cats)
+                    results_union += alt_results
+                except Exception:  # pragma: no cover - best-effort
+                    pass
+            if results_union and not cleaned:
+                cleaned = await apply_rerank(results_union)
+
+        if not cleaned and "general" in cats and len(cats) > 1:
+            logger.warning("[websearch] No results with categories %s, retrying without 'general'", cats)
+            fallback_cats = [c for c in cats if c != "general"]
+            if fallback_cats:
+                try:
+                    results_union = await primary_query(fallback_cats)
+                    cleaned = await apply_rerank(results_union)
+                    cats = fallback_cats
+                    logger.info(
+                        "[websearch] Fallback with cats=%s produced %d results",
+                        fallback_cats,
+                        len(cleaned),
+                    )
+                except Exception as exc:  # pragma: no cover - fallback best-effort
+                    logger.warning("[websearch] Fallback failed: %s", exc)
 
         dt = time.perf_counter() - t0
         logger.info(

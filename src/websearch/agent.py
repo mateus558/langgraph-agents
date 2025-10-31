@@ -24,6 +24,7 @@ from websearch.nodes import (
     build_web_search_node,
 )
 from websearch.nodes.shared import SupportsEmbedder
+from websearch.rerank import MMRReranker
 from config import get_settings
 from core.time import resolve_timezone
 
@@ -57,6 +58,12 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
 
         self._langdet = LangDetector()
         self._local_tz: tzinfo = self._resolve_local_timezone()
+        self._reranker = MMRReranker(
+            embedder=cast(SupportsEmbedder | None, self.config.embedder),
+            use_vectorstore=bool(self.config.use_vectorstore_mmr),
+            lambda_mult=self.config.mmr_lambda,
+            fetch_k=self.config.mmr_fetch_k,
+        )
         self._search_wrapper_cls = SearxSearchWrapper
 
         self.build()
@@ -183,6 +190,7 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             local_tz=self._local_tz,
             search_wrapper_factory=self._search_wrapper_factory,
             embedder=cast(SupportsEmbedder | None, self.config.embedder),
+            reranker=self._reranker,
         )
 
         graph: StateGraph[SearchState] = StateGraph(SearchState)

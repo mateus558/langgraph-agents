@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any, Awaitable, Callable, Protocol
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
+
+from websearch.rerank import Reranker, SupportsEmbedder
 
 from websearch.config import SearchAgentConfig
 from websearch.language import LangDetector
@@ -34,6 +37,6 @@ class NodeDependencies:
     local_tz: tzinfo
     search_wrapper_factory: Callable[[], SupportsSearch]
     embedder: SupportsEmbedder | None = None
-
+    reranker: Reranker | None = None
 
 __all__ = ["NodeDependencies", "SupportsSearch", "SupportsEmbedder"]
