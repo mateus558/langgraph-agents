@@ -4,10 +4,11 @@ import time
 from collections.abc import Sequence
 
 from langchain.chat_models import init_chat_model
-from langchain.messages import AnyMessage, HumanMessage, RemoveMessage
+from langchain.messages import RemoveMessage
 from langchain_core.messages import BaseMessage
 
 from chatagent.config import Summarizer
+from chatagent.prompts import build_summarizer_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -63,27 +64,13 @@ class BaseSummarizer(Summarizer):
         content = m.content if isinstance(m.content, str) else str(m.content)
         return f"{role}: {content}"
 
-    def build_prompt(self, summary: str, messages_text: str) -> str:
-        """Build the summarization prompt from current summary and messages.
+    def build_prompt(self, summary: str, messages_text: str) -> tuple[str, Sequence[BaseMessage]]:
+        """Return the rendered human prompt and message sequence.
 
-        Subclasses can extend or override this to tweak system rules or language
-        guidance.
+        Subclasses can extend or override this to tweak prompt construction
+        while still returning a `(prompt_text, messages)` tuple.
         """
-        if summary:
-            prompt = (
-                f"This is a summary to date:\n{summary}\n\n"
-                f"Extend the summary considering the new messages:\n{messages_text}\n"
-            )
-        else:
-            prompt = f"Create a concise summary of the conversation below:\n{messages_text}\n"
-
-        prompt += (
-            "\n### Rules:\n"
-            "\t- Provide a concise summary in the same language as the user."
-            "\n\t- Return only the summary, nothing else.\n"
-        )
-
-        return prompt
+        return build_summarizer_prompt(summary, messages_text)
 
     def summarize(self, state):
         summary = state.get("summary") or ""
@@ -91,11 +78,11 @@ class BaseSummarizer(Summarizer):
         visible = [m for m in msgs if self._is_user_visible(m)]
         messages_text = "\n".join(self._render(m) for m in visible)
 
-        prompt = self.build_prompt(summary, messages_text)
+        prompt, messages_payload = self.build_prompt(summary, messages_text)
 
         logger.debug("Summarization prompt: %s", prompt)
         t0 = time.perf_counter()
-        resp = self.model.invoke([HumanMessage(content=prompt)])
+        resp = self.model.invoke(messages_payload)
         dt = time.perf_counter() - t0
         logger.info("Summarization invoke took %.3fs", dt)
 
@@ -162,4 +149,3 @@ class OpenAISummarizer(BaseSummarizer):
             temperature=temperature,
             num_ctx=num_ctx,
         )
-

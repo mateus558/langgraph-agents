@@ -8,11 +8,12 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 
 from websearch.config import SearchState
 from websearch.utils import canonical_url
+
+from websearch.prompts import build_websearch_summary_messages
 
 from .shared import NodeDependencies
 
@@ -42,22 +43,6 @@ def build_summarize_node(deps: NodeDependencies) -> RunnableLambda:
         now_utc_str = now_utc.strftime("%Y-%m-%d %H:%M:%S %Z")
         now_local_str = now_local.strftime("%Y-%m-%d %H:%M:%S %Z")
 
-        sys = SystemMessage(
-            content=(
-                "You are a factual summarizer. Be concise, verifiable, objective. "
-                "Always answer in the user's language.\n"
-                f"Current time (UTC): {now_utc_str}\n"
-                f"Current time (America/Sao_Paulo): {now_local_str}\n\n"
-                "TEMPORAL POLICY:\n"
-                "• Interpret 'next', 'upcoming', and schedules strictly relative to the current time above.\n"
-                "• Convert times to America/Sao_Paulo when presenting times; include weekday and explicit date.\n"
-                "• If a source mentions a past date, do NOT call it 'next'; mark it as 'already occurred'.\n"
-                "• Prefer sources with explicit dates/times over vague claims; prefer newest when conflicting.\n"
-                "• If no future date > now is found, say 'No upcoming date found in the results.' Do not guess.\n"
-                "• For time-related queries, the 'Summary' MUST start with an 'As of <UTC>/<local>:' clause.\n"
-            )
-        )
-
         urls = [str(r.get("link", "")) for r in results if isinstance(r.get("link"), str)]
         items: list[str] = []
         for idx, result in enumerate(results, start=1):
@@ -72,24 +57,14 @@ def build_summarize_node(deps: NodeDependencies) -> RunnableLambda:
             + "\n".join(f"[{i+1}] {u}" for i, u in enumerate(urls))
         )
 
-        prompt = (
-            f"{whitelist_msg}\n\n"
-            "TASK: Summarize and answer the query using only the listed sources.\n"
-            "MANDATORY OUTPUT FORMAT:\n"
-            "Summary:\n"
-            "- Start with: 'As of <YYYY-MM-DD HH:MM UTC / local>:'\n"
-            "- If the user query is time related, include the next upcoming or most recent relevant date strictly compared to the current time.\n"
-            "- Only add information that is relevant to the user query.\n"
-            "Details (optional):\n"
-            "- Add factual context such as periodicity, duration, or schedule patterns when the user query suggests so.\n"
-            "Sources:\n"
-            "- List only the citation indices used, ordered by importance (e.g., [1], [4], [2]).\n\n"
-            "CITATION AND CONFLICT RULES:\n"
-            "- Every date or quantitative claim must have at least one citation [n].\n"
-            "- When multiple sources disagree, identify the conflict and prefer the newest data.\n"
-            "- If the user query has time relationships: If no upcoming or relevant date is found, explicitly say: 'No future or current date found in the results.'\n\n"
-            f"Query: {query}\n\n"
-            "RESULTS (to base your answer on):\n" + "\n\n".join(items)
+        local_label = getattr(tz, "key", None) or str(tz)
+        messages_payload = build_websearch_summary_messages(
+            query=query,
+            whitelist=whitelist_msg,
+            results="\n\n".join(items),
+            utc_time=now_utc_str,
+            local_time=now_local_str,
+            local_label=local_label,
         )
 
         model = deps.get_model()
@@ -99,7 +74,7 @@ def build_summarize_node(deps: NodeDependencies) -> RunnableLambda:
             logger.info("[websearch] node=summarize dt=%.3fs (fallback)", dt)
             return {"summary": f"(Fallback without LLM)\n{top}"}
 
-        out = await deps.call_llm([sys, HumanMessage(content=prompt)], 90.0)
+        out = await deps.call_llm(list(messages_payload), 90.0)
         text = (getattr(out, "content", "") or "").strip()
 
         safe = {canonical_url(u) for u in urls}

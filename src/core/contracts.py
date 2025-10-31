@@ -33,15 +33,21 @@ class PromptProtocol(Protocol):
     """Minimal contract for prompt-like objects.
 
     Attributes:
-        prompt: The template (raw string) used for formatting.
+        id: Stable identifier for the prompt (useful for logging/versioning).
+        version: Optional semantic version for the prompt template.
+        prompt: The primary human-visible template used for formatting.
 
     Methods:
-        format(**kwargs): Render the template with provided keyword arguments.
+        format(**kwargs): Render the primary template with provided keyword arguments.
+        messages(**kwargs): Render a sequence of LangChain-compatible messages.
     """
 
+    id: str
+    version: str
     prompt: str
 
     def format(self, **kwargs: Any) -> str: ...
+    def messages(self, **kwargs: Any) -> list[Any]: ...
 
 
 class AgentProtocol(Protocol):
