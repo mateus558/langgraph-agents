@@ -37,8 +37,7 @@ def build_summarize_node(deps: NodeDependencies) -> RunnableLambda:
             logger.info("[websearch] node=summarize dt=%.3fs (no results)", dt)
             return {"summary": f"No results found for: {query}"}
 
-        tz = await deps.get_local_tz()
-        tv = build_web_time_vars(tz)
+        tv = build_web_time_vars(deps.local_tz)
 
         urls = [str(r.get("link", "")) for r in results if isinstance(r.get("link"), str)]
         items: list[str] = []

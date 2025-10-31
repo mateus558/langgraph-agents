@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import tzinfo
 from typing import Any, Awaitable, Callable, Protocol
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import BaseMessage
 
 from websearch.config import SearchAgentConfig
 from websearch.language import LangDetector
@@ -16,6 +17,11 @@ class SupportsSearch(Protocol):
         ...
 
 
+class SupportsEmbedder(Protocol):
+    def embed_query(self, text: str) -> list[float]: ...  # pragma: no cover - protocol
+    def embed_documents(self, texts: list[str]) -> list[list[float]]: ...  # pragma: no cover - protocol
+
+
 @dataclass(slots=True)
 class NodeDependencies:
     """Container for cross-cutting dependencies used by the graph nodes."""
@@ -23,11 +29,11 @@ class NodeDependencies:
     config: SearchAgentConfig
     lang_detector: LangDetector
     translate_query: Callable[[str, str], Awaitable[str]]
-    call_llm: Callable[[list[Any], float], Awaitable[Any]]
+    call_llm: Callable[[list[BaseMessage], float], Awaitable[BaseMessage]]
     get_model: Callable[[], BaseChatModel | None]
-    get_local_tz: Callable[[], Awaitable[tzinfo]]
+    local_tz: tzinfo
     search_wrapper_factory: Callable[[], SupportsSearch]
-    embedder: object | None = None
+    embedder: SupportsEmbedder | None = None
 
 
-__all__ = ["NodeDependencies", "SupportsSearch"]
+__all__ = ["NodeDependencies", "SupportsSearch", "SupportsEmbedder"]

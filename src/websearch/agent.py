@@ -16,12 +16,14 @@ from core.contracts import AgentMixin, ModelFactory
 from websearch.config import SearchAgentConfig, SearchState
 from websearch.language import LangDetector
 from websearch.llm import call_llm_safely, translate_for_search
+from langchain_core.messages import BaseMessage
 from websearch.nodes import (
     NodeDependencies,
     build_categorize_node,
     build_summarize_node,
     build_web_search_node,
 )
+from websearch.nodes.shared import SupportsEmbedder
 from config import get_settings
 from core.time import resolve_timezone
 
@@ -146,11 +148,7 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             )
         return tz
 
-    async def _get_local_tz(self) -> tzinfo:
-        return self._local_tz
-
-
-    async def _call_llm(self, msgs: list[Any], timeout: float = 90.0):
+    async def _call_llm(self, msgs: list[BaseMessage], timeout: float = 90.0) -> BaseMessage:
         model = self.get_model()
         if model is None:
             raise RuntimeError("LLM model not configured for WebSearchAgent")
@@ -182,9 +180,9 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
             translate_query=self._translate_query,
             call_llm=self._call_llm,
             get_model=self.get_model,
-            get_local_tz=self._get_local_tz,
+            local_tz=self._local_tz,
             search_wrapper_factory=self._search_wrapper_factory,
-            embedder=self.config.embedder,
+            embedder=cast(SupportsEmbedder | None, self.config.embedder),
         )
 
         graph: StateGraph[SearchState] = StateGraph(SearchState)
