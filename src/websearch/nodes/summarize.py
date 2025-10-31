@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig, RunnableLambda
@@ -14,6 +13,7 @@ from websearch.config import SearchState
 from websearch.utils import canonical_url
 
 from websearch.prompts import build_websearch_summary_messages
+from core.time import build_web_time_vars
 
 from .shared import NodeDependencies
 
@@ -37,11 +37,8 @@ def build_summarize_node(deps: NodeDependencies) -> RunnableLambda:
             logger.info("[websearch] node=summarize dt=%.3fs (no results)", dt)
             return {"summary": f"No results found for: {query}"}
 
-        now_utc = datetime.now(timezone.utc)
         tz = await deps.get_local_tz()
-        now_local = now_utc.astimezone(tz)
-        now_utc_str = now_utc.strftime("%Y-%m-%d %H:%M:%S %Z")
-        now_local_str = now_local.strftime("%Y-%m-%d %H:%M:%S %Z")
+        tv = build_web_time_vars(tz)
 
         urls = [str(r.get("link", "")) for r in results if isinstance(r.get("link"), str)]
         items: list[str] = []
@@ -57,14 +54,13 @@ def build_summarize_node(deps: NodeDependencies) -> RunnableLambda:
             + "\n".join(f"[{i+1}] {u}" for i, u in enumerate(urls))
         )
 
-        local_label = getattr(tz, "key", None) or str(tz)
         messages_payload = build_websearch_summary_messages(
             query=query,
             whitelist=whitelist_msg,
             results="\n\n".join(items),
-            utc_time=now_utc_str,
-            local_time=now_local_str,
-            local_label=local_label,
+            utc_time=tv["utc_time"],
+            local_time=tv["local_time"],
+            local_label=tv["local_label"],
         )
 
         model = deps.get_model()

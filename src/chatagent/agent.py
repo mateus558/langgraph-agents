@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime
 from zoneinfo import ZoneInfo
 from dataclasses import dataclass
 
@@ -16,6 +15,7 @@ from langgraph.cache.memory import InMemoryCache
 from chatagent.config import AgentState
 from chatagent.summarizer import OllamaSummarizer
 from chatagent.prompts import ASSISTANT_SYSTEM_PROMPT
+from core.time import build_chat_clock_vars
 from config import get_settings
 from core.contracts import AgentMixin, ModelFactory
 from utils.messages import TokenEstimator, coerce_message_content
@@ -101,14 +101,9 @@ class ChatAgent(AgentMixin):
             run_id = (state.get("metadata") or {}).get("run_id", "unknown")
             msgs = state.get("messages", [])
             
-            now_dt = datetime.now(self.tz)
-            now = now_dt.isoformat()
-            # Include weekday name (e.g., monday) to help temporal reasoning
-            weekday = now_dt.strftime("%A").lower()
-            clock = (
-                    f"Current time: {now} ({weekday}) | Timezone: {self.config.tz_name}. "
-                    "Use this as the single source of truth for 'today', 'tomorrow', etc."
-                )
+            # Standardized time context for prompts
+            tc = build_chat_clock_vars(self.tz)
+            clock = tc["clock"]
             
             sys_text = ASSISTANT_SYSTEM_PROMPT.format_system(
                 clock=clock, summary=state.get("summary") or ""
