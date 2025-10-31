@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass
 
 from langchain_core.messages import SystemMessage, AIMessage
@@ -37,6 +39,7 @@ class ChatAgentConfig:
     num_ctx: int | None = None
     # allow callers to choose streaming-by-default semantics if they want
     default_stream: bool = False
+    tz_name: str = "America/Sao_Paulo"
 
 
 class ChatAgent(AgentMixin):
@@ -61,6 +64,8 @@ class ChatAgent(AgentMixin):
 
         # Token estimator (pure, cheap)
         self._tokenizer = TokenEstimator()
+        self.tz = ZoneInfo(self.config.tz_name) 
+
 
         self.build()
 
@@ -82,6 +87,7 @@ class ChatAgent(AgentMixin):
         )
 
         sys_tmpl = (
+            "{clock}\n"
             "You are a helpful AI assistant. Be friendly and professional. "
             "Avoid long responses unless needed and reply in the user's language.\n"
             "Conversation Summary: {summary}\n"
@@ -91,7 +97,17 @@ class ChatAgent(AgentMixin):
             # Observability context
             run_id = (state.get("metadata") or {}).get("run_id", "unknown")
             msgs = state.get("messages", [])
-            sys = SystemMessage(content=sys_tmpl.format(summary=state.get("summary") or ""))
+            
+            now_dt = datetime.now(self.tz)
+            now = now_dt.isoformat()
+            # Include weekday name (e.g., monday) to help temporal reasoning
+            weekday = now_dt.strftime("%A").lower()
+            clock = (
+                    f"Current time: {now} ({weekday}) | Timezone: {self.config.tz_name}. "
+                    "Use this as the single source of truth for 'today', 'tomorrow', etc."
+                )
+            
+            sys = SystemMessage(content=sys_tmpl.format(clock=clock, summary=state.get("summary") or ""))
 
             # Token estimate (input)
             input_tokens = self._tokenizer.count_messages([sys, *msgs])
