@@ -221,3 +221,5 @@ pytest -k websearch -q
 - MMR disabled: ensure optional dependencies are installed (FAISS, `langchain-huggingface`, `torch` for GPU), or set `USE_VECTORSTORE_MMR=false` to use fallback diversification.
 - Unexpected language behavior: set `SEARCH_PIVOT_TO_EN=0` to disable pivoting, or set `SEARCH_LANG` in `SearchAgentConfig` to force a language.
 - URLs missing in summaries: expected—summarizer whitelists only returned links and strips any others.
+- OpenAI embeddings used instead of HuggingFace: confirm `langchain-huggingface` and `pydantic>=2` are installed. On startup the agent logs `[websearch] langchain-huggingface import failed: ...` when the local embedder cannot initialize and it falls back to OpenAI (if `OPENAI_API_KEY` is set).
+- Standalone MMR requires NumPy: if NumPy is missing the agent falls back to domain diversification; install `numpy` to enable non‑FAISS MMR.
