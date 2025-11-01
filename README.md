@@ -183,6 +183,11 @@ See `.env.example` for all available options.
 - `QUICK_REFERENCE.md` - Quick start and migration notes
 - `CONTRIBUTING.md` - Development guidelines
 
+### References
+
+- LangGraph Local Server (OSS): https://docs.langchain.com/oss/python/langgraph/local-server
+- LangGraph Deployments (LangSmith/Cloud): https://docs.langchain.com/langsmith/deployments
+
 ### Code Quality
 
 Format code:
