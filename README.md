@@ -1,6 +1,10 @@
-# AI Server
+# LangGraph Agents
 
-A production-ready LangGraph server with AI agents for conversational chat and intelligent web search.
+Self-hosted LangGraph server exposing production-ready AI agents for conversational chat and intelligent web search.
+
+- Timezone-aware prompts and summaries (configurable via TIMEZONE/TZ_NAME)
+- Web search powered by SearxNG with optional MMR reranking
+- Clean LangGraph graphs with caching and graceful fallbacks
 
 ## Features
 
@@ -37,25 +41,24 @@ curl -X POST http://localhost:8123/websearch/invoke \
   -d '{"query": "latest Python news"}'
 ```
 
-See **[LANGGRAPH_DEPLOYMENT.md](LANGGRAPH_DEPLOYMENT.md)** for complete deployment guide.
+See `langgraph.json` for configured graphs and `ARCHITECTURE.md` for diagrams.
 
 ### Option 2: Direct Python Usage (Development/Testing)
 
 Use agents directly in your Python code:
 
 ```python
-from src.chatagent.agent import ChatAgent, AgentConfig
-from langchain.messages import HumanMessage
+from src.chatagent.agent import ChatAgent, ChatAgentConfig
+from langchain_core.messages import HumanMessage
 
 # Initialize chat agent
-config = AgentConfig()
-agent = ChatAgent(config)
+agent = ChatAgent(ChatAgentConfig())
 
 # Send a message
 result = agent.invoke({
     "messages": [HumanMessage(content="Hello!")],
     "history": [],
-    "summary": None
+    "summary": None,
 })
 
 print(result["messages"][-1].content)
@@ -134,6 +137,12 @@ Edit `.env` file with your settings:
 MODEL_NAME=llama3.1
 LLM_BASE_URL=http://localhost:11434
 
+# Global Timezone (IANA name)
+# Used by ChatAgent and as fallback for WebSearchAgent when LOCAL_TIMEZONE is not set
+TIMEZONE=America/Sao_Paulo
+# Alternatively, you can use TZ_NAME
+# TZ_NAME=America/Sao_Paulo
+
 # Chat Agent
 CHAT_MESSAGES_TO_KEEP=5
 CHAT_MAX_TOKENS_BEFORE_SUMMARY=4000
@@ -141,16 +150,38 @@ CHAT_MAX_TOKENS_BEFORE_SUMMARY=4000
 # Web Search
 SEARX_HOST=http://localhost:8095
 SEARCH_K=8
+# Optional overrides
+# SEARCH_MAX_CATEGORIES=4
+# SEARCH_SAFESEARCH=1
+# SEARCH_LANG=en-US
+# SEARX_TIMEOUT_S=8.0
+# SEARCH_RETRIES=2
+# SEARCH_BACKOFF_BASE=0.6
+# SEARCH_TEMPERATURE=0.5
+# SEARCH_PIVOT_TO_EN=1
+# SEARCH_MAX_CONCURRENCY=8
+
+# Timezone used specifically by WebSearchAgent summaries (overrides TIMEZONE if set)
+# LOCAL_TIMEZONE=America/Sao_Paulo
+
+# Embeddings / MMR (WebSearch)
+# EMBEDDINGS_MODEL_NAME=intfloat/e5-base-v2
+# OPENAI_API_KEY= # if you want to use OpenAI embeddings as a fallback
+# USE_VECTORSTORE_MMR=true
+# MMR_LAMBDA=0.55
+# MMR_FETCH_K=50
 ```
 
 See `.env.example` for all available options.
 
 ## Documentation
 
-- **[LANGGRAPH_DEPLOYMENT.md](LANGGRAPH_DEPLOYMENT.md)** - Complete deployment guide
-- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick start and migration guide
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Development guidelines
-- **[FIXES_SUMMARY.md](FIXES_SUMMARY.md)** - Recent improvements and changes
+- `src/chatagent/README.md` - ChatAgent details (API, config, streaming)
+- `src/websearch/README.md` - WebSearch agent (architecture, MMR, usage)
+- `src/symindex/README.md` - Semantic indexer overview
+- `ARCHITECTURE.md` - System graphs and how to regenerate
+- `QUICK_REFERENCE.md` - Quick start and migration notes
+- `CONTRIBUTING.md` - Development guidelines
 
 ### Code Quality
 
@@ -186,25 +217,34 @@ make test-cov
 ```
 langgraph-agents/
 ├── src/
-│   ├── config.py              # Global configuration
+│   ├── config.py              # Global configuration (models, base_url, timezone)
 │   ├── chatagent/             # Chat agent implementation
-│   │   ├── agent.py           # Main agent logic
-│   │   ├── config.py          # Agent configuration
+│   │   ├── agent.py           # Main agent logic + server export
+│   │   ├── config.py          # State / protocols
+│   │   ├── prompts.py         # System and summarizer prompts
 │   │   └── summarizer.py      # Summarization logic
 │   ├── websearch/             # Web search agent
-│   │   ├── agent.py           # Search agent logic
+│   │   ├── agent.py           # Search agent logic + server export
 │   │   ├── config.py          # Search configuration
 │   │   ├── constants.py       # Category patterns
 │   │   ├── heuristics.py      # Query categorization
+│   │   ├── language.py        # Language detection
+│   │   ├── nodes/             # Node builders (categorize/search/summarize)
+│   │   ├── prompts.py         # Summarization prompts
+│   │   ├── ranking/           # MMR reranking helpers
 │   │   ├── tool.py            # LangChain tool wrapper
 │   │   └── utils.py           # Utility functions
 │   ├── core/                  # Core components
-│   │   ├── contracts.py       # Protocols and interfaces
-│   │   ├── exceptions.py      # Custom exceptions
-│   │   └── validation.py      # Pydantic models
-│   └── utils/                 # Utilities
-│       └── messages.py        # Message handling
-├── tests/                     # Test suite (TODO)
+│   │   ├── contracts.py       # Protocols, model factory, agent mixin
+│   │   ├── prompts.py         # Prompt abstraction
+│   │   └── time.py            # Time helpers (clock/zone)
+│   ├── symindex/              # Semantic indexer
+│   │   ├── parser.py          # Python AST → semantic units
+│   │   └── README.md          # Package docs
+│   └── utils/
+│       └── messages.py        # Token estimator and message helpers
+├── docs/                      # Additional docs (symindex, etc.)
+├── tests/                     # Test suite
 ├── .env.example               # Example environment variables
 ├── .editorconfig              # Editor configuration
 ├── .pre-commit-config.yaml    # Pre-commit hooks
@@ -233,35 +273,57 @@ The search agent follows a three-stage pipeline:
 3. **Rerank**: Applies MMR (Maximal Marginal Relevance) for diversity
 4. **Summarize**: Generates source-backed summary with URL whitelist
 
-#### MMR Reranking (New!)
+#### MMR Reranking
 
-The agent now supports intelligent result reranking using MMR to balance relevance and diversity:
-
-- **Three-tier strategy**: FAISS → Standalone MMR → Domain diversification
-- **Async-safe**: Non-blocking embedding generation
-- **Configurable**: Adjust via `MMR_LAMBDA` (0=diversity, 1=relevance)
-- **Graceful fallback**: Works with or without embeddings
-
-See **[docs/MMR_RERANKING.md](docs/MMR_RERANKING.md)** for complete guide.
+MMR balances relevance and diversity when sampling results. See `src/websearch/README.md` for the three‑tier strategy (FAISS → standalone MMR → domain diversification), configuration, and fallbacks.
 
 ## Configuration
 
 ### Environment Variables
 
+Global
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MODEL_NAME` | Model identifier | `llama3.1` |
-| `LLM_BASE_URL` | LLM provider URL | `None` |
-| `CHAT_MESSAGES_TO_KEEP` | Messages after summary | `5` |
-| `CHAT_MAX_TOKENS_BEFORE_SUMMARY` | Token limit | `4000` |
-| `SEARX_HOST` | SearxNG instance URL | `http://localhost:8095` |
-| `SEARCH_K` | Results to return | `8` |
-| `USE_VECTORSTORE_MMR` | Enable MMR reranking | `true` |
-| `MMR_LAMBDA` | Relevance/diversity balance | `0.55` |
-| `MMR_FETCH_K` | Candidates before filtering | `50` |
-| `EMBEDDINGS_MODEL_NAME` | HuggingFace embedding model | `intfloat/e5-small-v2` |
+| `MODEL_NAME` | Default model identifier | `llama3.1` |
+| `LLM_BASE_URL` | LLM provider URL (also accepts `BASE_URL`) | `None` |
+| `TIMEZONE` | Default IANA timezone (used by ChatAgent, and as fallback for WebSearchAgent) | `America/Sao_Paulo` |
+| `TZ_NAME` | Alternate variable for timezone (same as `TIMEZONE`) | – |
+| `EMBEDDINGS_MODEL` | Global embeddings model identifier (if used elsewhere) | `nomic-embed-text` |
 
-See `.env.example` for complete list.
+ChatAgent
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CHAT_MODEL_NAME` | Override chat model (falls back to `MODEL_NAME`) | – |
+| `CHAT_MESSAGES_TO_KEEP` | Messages kept after summarization | `5` |
+| `CHAT_MAX_TOKENS_BEFORE_SUMMARY` | Token window threshold for summarization | `4000` |
+| `CHAT_TEMPERATURE` | Temperature for chat responses | `0.5` |
+
+WebSearchAgent
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WEBSEARCH_MODEL_NAME` | Override websearch model (falls back to `MODEL_NAME`) | `llama3.1` |
+| `SEARX_HOST` | SearxNG instance URL | `http://localhost:8095` |
+| `SEARCH_K` | Final results to return | `30` |
+| `SEARCH_MAX_CATEGORIES` | Max categories per query | `4` |
+| `SEARCH_SAFESEARCH` | Safe search level (0/1/2) | `1` |
+| `SEARCH_LANG` | Language code (e.g., `en-US`) | `en-US` |
+| `SEARX_TIMEOUT_S` | Searx request timeout (seconds) | `8.0` |
+| `SEARCH_RETRIES` | Retry attempts on failure | `2` |
+| `SEARCH_BACKOFF_BASE` | Exponential backoff base | `0.6` |
+| `SEARCH_TEMPERATURE` | LLM temperature during summarization | `0.5` |
+| `SEARCH_PIVOT_TO_EN` | Also search in English for non-English queries | `1` |
+| `SEARCH_MAX_CONCURRENCY` | Max concurrent Searx queries | `8` |
+| `LOCAL_TIMEZONE` | Timezone for summaries (overrides `TIMEZONE` if set) | `America/Sao_Paulo` |
+| `EMBEDDINGS_MODEL_NAME` | HF embeddings model for MMR | `intfloat/e5-base-v2` |
+| `OPENAI_API_KEY` | If set, enables OpenAI embeddings fallback | – |
+| `USE_VECTORSTORE_MMR` | Use FAISS-based MMR when available | `true` |
+| `MMR_LAMBDA` | MMR diversity vs relevance balance | `0.55` |
+| `MMR_FETCH_K` | Candidates to consider before MMR | `50` |
+
+See `.env.example` for the complete list with inline comments.
 
 ## Contributing
 
