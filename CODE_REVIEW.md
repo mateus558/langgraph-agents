@@ -1,10 +1,10 @@
-# Code Review: ai-server
+# Code Review: langgraph-agents
 
 Date: 2025-10-28
 
 Summary
 -------
-This review covers the repository at /home/mateuscmarim/Projects/python/ai-server. Overall the project is well-organized into logical packages (chatagent, websearch, utils, core). Tests exist for some components and there is a clear entry structure. There are a few large utility modules and opportunities to improve code quality, maintainability, testing, and CI practices.
+This review covers the repository at /home/mateuscmarim/Projects/python/langgraph-agents. Overall the project is well-organized into logical packages (chatagent, websearch, utils, core). Tests exist for some components and there is a clear entry structure. There are a few large utility modules and opportunities to improve code quality, maintainability, testing, and CI practices.
 
 High-level strengths
 --------------------

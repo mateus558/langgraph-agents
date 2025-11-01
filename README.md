@@ -95,7 +95,7 @@ print(result["summary"])
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd ai-server
+cd langgraph-agents
 ```
 
 2. Install dependencies:
@@ -184,7 +184,7 @@ make test-cov
 ### Project Structure
 
 ```
-ai-server/
+langgraph-agents/
 ├── src/
 │   ├── config.py              # Global configuration
 │   ├── chatagent/             # Chat agent implementation

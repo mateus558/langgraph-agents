@@ -71,7 +71,7 @@ from src.websearch.agent import WebSearchAgent  # noqa: E402  # type: ignore
 def _high_level_mermaid() -> str:
     return """
 flowchart TD
-    client[Client / SDK / Browser] --> api[LangGraph API (ai-server)]
+    client[Client / SDK / Browser] --> api[LangGraph API (langgraph-agents)]
     api --> chat[ChatAgent Graph]
     api --> web[WebSearchAgent Graph]
     chat --> llm[LLM Provider (OpenAI / Ollama)]

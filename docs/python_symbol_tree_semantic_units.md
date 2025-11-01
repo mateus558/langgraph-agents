@@ -1,7 +1,7 @@
 # Refactor Plan: `python_symbol_tree` → Semantic Units
 
 Date: 2025-10-29
-Owner: ai-server maintainers
+Owner: langgraph-agents maintainers
 Status: Phase 1 (modularization) shipped
 Scope: `src/utils/python_symbol_tree.py`
 
@@ -127,38 +127,71 @@ Serialization
 
 ---
 
-## Internal architecture and layout
+## Internal architecture
 
-New package: `src/utils/symindex/`
-- `model.py` — dataclasses for units/edges, ID/hash generation rules
-- `parser.py` — AST to raw units (syntax pass only)
-- `resolvers.py` — name scopes, linkages, property grouping, constructor role, simple override discovery (same-file)
-- `enrichers/docstrings.py` — parse docstrings into `DocSectionUnit` (Google/Numpy/PEP287 heuristics)
-- `enrichers/roles.py` — detect dataclass/pydantic/enum/protocol/overload groups
-- `enrichers/exports.py` — exports/re-exports from `__all__` and import binding
-- `index.py` — build `SemanticIndex` and query helpers
-- `adapters.py` — (optional) compatibility: `to_extract_result()`
-- `cli.py` — dump legacy or semantic JSON for a file
+### Parser flow
 
-Processing pipeline
-1) Parse: AST → RawUnits (fast, source segments preferred over unparse)
-2) Resolve: scopes, property grouping, constructor mapping, simple overrides
-3) Enrich: docstrings, roles, exports/re-exports
-4) Index: compute IDs, edges, and assemble `SemanticIndex`
+```mermaid
+flowchart TD
+    A[Source text] -->|ast.parse| B[AST Module]
+    B --> C[SemanticParser]
+    C -->|yield units| D[SemanticIndex builder]
+    C -->|yield edges| D
+    D --> E[SemanticIndex]
+```
 
+Parser responsibilities
+- Build `ModuleUnit` for the root module
+- Traverse AST nodes, emitting semantic units for classes, functions, imports, aliases
+- Add `contains` edges between parent/child units
+- Populate metadata: location, visibility, decorators, annotations
+
+Index responsibilities
+- Deduplicate units by ID
+- Build lookup tables (by qualname, by kind, by module)
+- Provide query helpers for common access patterns
+
+### Data model (draft)
+
+```python
+@dataclass(slots=True)
+class SemanticUnit:
+    kind: Literal["module", "class", "function", "method", "field", "property", "type_alias", "import", "constant", "doc_section"]
+    name: str
+    qualname: str
+    module: str
+    filepath: str | None
+    line_range: tuple[int, int]
+    docstring: str | None
+    visibility: Literal["public", "protected", "private"]
+    exported: bool
+    id_sha: str
+    flags: dict[str, bool] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
+
+@dataclass(slots=True)
+class Edge:
+    type: Literal["contains", "extends", "overrides", "decorates", "imports", "exports", "property_of", "accessor"]
+    src_id: str
+    dst_id: str
+    data: dict[str, Any] = field(default_factory=dict)
+```
 
 ---
 
 ## Migration plan
 
-Phase 1: Modularization (no behavior change)
-- Extract current visitors/builders into `parser.py`; ensure existing tests pass
-- (Optional) Implement `adapters.to_extract_result()` to match `ExtractResult`
-- Add CLI toggle; write basic docs
+Phase 1: Modularize and adapt
+- Extract current logic into dedicated modules (parser, model, index, adapter)
+- Keep existing `ExtractResult` output for compatibility (optional adapter)
+- Add unit tests covering feature parity with existing extractor
+- Document semantic model and update README
 
-Phase 2: Add semantics (flagged)
-- Implement resolvers for properties, constructors, exports
-- Add enrichers for docstrings and roles (dataclass/enum/protocol/pydantic)
+Phase 2: Enrichers and roles
+- Add detectors for dataclasses, enums, pydantic models, protocols, properties
+- Parse docstring sections into `DocSectionUnit` (if available)
+- Provide queries for public API, data models
+- Gate enrichers behind optional flags/env vars
 
 Phase 3: Relationships and queries
 - Add edges: `contains`, `extends`, `overrides` (intra-module), `decorates`, `imports`

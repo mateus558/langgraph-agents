@@ -1,9 +1,5 @@
 """AST-to-semantic-unit parser for the Python symbol semantic index.
 
-The ``SemanticParser`` mirrors the legacy ``PySymbolExtractor`` traversal but
-emits ``SemanticUnit`` instances and ``Edge`` relationships.  It is
-dependency-free (pure ``ast``) and designed to be the first stage in the
-semantic indexing pipeline before additional resolvers or enrichers run.
 """
 
 from __future__ import annotations

@@ -3,14 +3,14 @@ FROM langchain/langgraph-api:3.11
 
 
 # -- Adding local package . --
-ADD . /deps/ai-server
+ADD . /deps/langgraph-agents
 # -- End of local package . --
 
 # -- Installing all local dependencies --
 RUN for dep in /deps/*; do             echo "Installing $dep";             if [ -d "$dep" ]; then                 echo "Installing $dep";                 (cd "$dep" && PYTHONDONTWRITEBYTECODE=1 uv pip install --system --no-cache-dir -c /api/constraints.txt -e .);             fi;         done
 # -- End of local dependencies install --
 ENV LANGGRAPH_AUTH='{"path": "src/security/auth.py:auth"}'
-ENV LANGSERVE_GRAPHS='{"chatagent": "/deps/ai-server/src/chatagent/agent.py:chatagent", "websearch": "/deps/ai-server/src/websearch/agent.py:websearch"}'
+ENV LANGSERVE_GRAPHS='{"chatagent": "/deps/langgraph-agents/src/chatagent/agent.py:chatagent", "websearch": "/deps/langgraph-agents/src/websearch/agent.py:websearch"}'
 
 
 
@@ -24,4 +24,4 @@ RUN rm -rf /usr/local/lib/python*/site-packages/pip* /usr/local/lib/python*/site
 RUN rm -rf /usr/lib/python*/site-packages/pip* /usr/lib/python*/site-packages/setuptools* /usr/lib/python*/site-packages/wheel* && find /usr/bin -name "pip*" -delete || true
 RUN uv pip uninstall --system pip setuptools wheel && rm /usr/bin/uv /usr/bin/uvx
 
-WORKDIR /deps/ai-server
+WORKDIR /deps/langgraph-agents

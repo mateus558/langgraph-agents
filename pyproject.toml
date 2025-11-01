@@ -1,5 +1,5 @@
 [project]
-name = "ai-server"
+name = "langgraph-agents"
 version = "0.1.0"
 description = "AI Server with LangGraph agents for chat and web search"
 readme = "README.md"

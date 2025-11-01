@@ -1,7 +1,7 @@
-# AI Server – Full Project Review
+# LangGraph Agents – Full Project Review
 
 Review date: 2025-10-28  
-Repository: `ai-server` (branch: master)  
+Repository: `langgraph-agents` (branch: master)  
 Language/Stack: Python 3.11, LangChain/LangGraph, LangGraph CLI, SearxNG
 
 ---
@@ -139,7 +139,7 @@ Recommended additions
 - Makefile: sensible tasks for format/lint/type/test/coverage
 - .pre-commit-config.yaml: hooks for black, ruff, mypy, plus basic hygiene
 - Dockerfile: Based on langchain/langgraph-api:3.11, installs this repo in editable mode, exports graphs via LANGSERVE_GRAPHS; cleans pip tooling for smaller image
-- docker-compose.yml: Provides a Postgres service and runs the ai-server; note: references REDIS_URI but no redis service defined
+- docker-compose.yml: Provides a Postgres service and runs langgraph-agents; note: references REDIS_URI but no redis service defined
 - langgraph.json: Points to `./src/chatagent/agent.py:chatagent` and `./src/websearch/agent.py:websearch`, uses `.env`
 - verify_installation.py: Helpful, but checks for `src/core/exceptions.py` and `src/core/validation.py` which are not present—this will report missing files
 

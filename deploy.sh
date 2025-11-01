@@ -4,7 +4,7 @@ set -euo pipefail
 # Remote deployment settings (override with env vars if needed)
 DEPLOY_HOST=${DEPLOY_HOST:-192.168.30.100}
 DEPLOY_USER=${DEPLOY_USER:-mateuscmarim}
-DEPLOY_PATH=${DEPLOY_PATH:-/home/mateuscmarim/ai-server}
+DEPLOY_PATH=${DEPLOY_PATH:-/home/mateuscmarim/langgraph-agents}
 # Extra SSH options (e.g., -p 22 -i ~/.ssh/id_rsa)
 SSH_OPTS=${SSH_OPTS:-}
 
@@ -69,4 +69,3 @@ ssh ${SSH_OPTS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
 	"set -euo pipefail; cd '${DEPLOY_PATH}' && docker compose up -d --build ${DOCKER_ARGS}"
 
 echo "Deployment command executed on remote host."
-

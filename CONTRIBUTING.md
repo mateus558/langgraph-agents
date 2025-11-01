@@ -12,8 +12,8 @@ Thank you for your interest in contributing to AI Server! This document provides
 
 1. **Fork the repository**
    ```bash
-   git clone https://github.com/yourusername/ai-server.git
-   cd ai-server
+   git clone https://github.com/yourusername/langgraph-agents.git
+   cd langgraph-agents
    ```
 
 2. **Set up development environment**

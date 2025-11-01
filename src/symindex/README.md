@@ -1,6 +1,6 @@
 # symindex
 
-`symindex` is the semantic symbol indexing layer used by ai-server. It turns a
+`symindex` is the semantic symbol indexing layer used by langgraph-agents. It turns a
 Python source file into a graph of semantic units (modules, classes, functions,
 fields, properties, imports, type aliases, etc.) and provides helper queries for
 analyzing those units.
@@ -27,7 +27,7 @@ conceptual overview and diagrams.
 ```python
 from pathlib import Path
 
-from src.utils.symindex import build_semantic_index
+from symindex import build_semantic_index
 
 source = Path("example.py").read_text(encoding="utf-8")
 index = build_semantic_index(src=source, module="example", filepath="example.py")
