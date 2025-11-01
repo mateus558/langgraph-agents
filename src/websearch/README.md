@@ -29,7 +29,7 @@ The agent compiles a graph with three nodes:
      - retries with exponential backoff + jitter and a concurrency semaphore.
      - optional pivot: for likely non‑English input, also search an English translation and merge.
    - Normalizes and deduplicates results (`normalize_urls`, `dedupe_results`).
-   - Reranks/diversifies top‑k with `diversify_topk_mmr`:
+   - Reranks/diversifies top‑k with `websearch.ranking.diversify_topk_mmr`:
      - Tiered strategy: FAISS+embedder → standalone MMR → domain rotation fallback.
    - Multiple fallbacks if no results: retry without language, without categories, or try common alt languages (en/pt).
    - Output: `results` (list of dicts with `title`, `link`, `snippet`), final `categories`, `lang`.

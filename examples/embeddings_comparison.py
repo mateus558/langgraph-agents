@@ -54,7 +54,7 @@ def check_gpu_availability():
 
 async def test_embedding_model(model_name: str, device: str):
     """Test a specific embedding model."""
-    from websearch.utils import diversify_topk_mmr
+    from websearch.ranking import diversify_topk_mmr
     
     logger.info("=" * 70)
     logger.info(f"Testing Model: {model_name}")

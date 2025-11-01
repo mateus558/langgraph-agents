@@ -1,21 +1,11 @@
-"""Unit tests for websearch.utils module.
-
-Covers canonical_url, normalize_urls, dedupe_results, diversify_topk, 
-diversify_topk_mmr, to_searx_locale.
-"""
+"""Unit tests for websearch utility and ranking helpers."""
 
 from __future__ import annotations
 
 import pytest
 
-from src.websearch.utils import (
-    canonical_url,
-    normalize_urls,
-    dedupe_results,
-    diversify_topk,
-    diversify_topk_mmr,
-    to_searx_locale,
-)
+from src.websearch.utils import canonical_url, normalize_urls, dedupe_results, to_searx_locale
+from src.websearch.ranking import diversify_topk, diversify_topk_mmr
 
 
 def test_canonical_url_basic():

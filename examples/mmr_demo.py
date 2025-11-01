@@ -26,7 +26,7 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from websearch.utils import diversify_topk, diversify_topk_mmr
+from websearch.ranking import diversify_topk, diversify_topk_mmr
 
 # Configure logging
 logging.basicConfig(

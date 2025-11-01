@@ -39,7 +39,7 @@ print()
 
 # Test 2: MMR function
 print("✓ Test 2: MMR Function")
-from websearch.utils import diversify_topk_mmr
+from websearch.ranking import diversify_topk_mmr
 
 
 async def test_mmr():

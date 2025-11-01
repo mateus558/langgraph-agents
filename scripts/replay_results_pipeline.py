@@ -22,12 +22,8 @@ from collections import Counter
 from typing import Any, Optional
 
 from websearch.config import SearchAgentConfig
-from websearch.utils import (
-    dedupe_results,
-    diversify_topk,
-    diversify_topk_mmr,
-    normalize_urls,
-)
+from websearch.utils import dedupe_results, normalize_urls
+from websearch.ranking import diversify_topk, diversify_topk_mmr
 
 
 def parse_args() -> argparse.Namespace:

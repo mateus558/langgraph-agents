@@ -9,7 +9,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage
 
-from websearch.rerank import Reranker, SupportsEmbedder
+from websearch.ranking import Reranker, SupportsEmbedder
 
 from websearch.config import SearchAgentConfig
 from websearch.language import LangDetector

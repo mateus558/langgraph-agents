@@ -15,13 +15,8 @@ from langchain_core.runnables import RunnableConfig, RunnableLambda
 from requests import RequestException
 
 from websearch.config import SearchState
-from websearch.utils import (
-    dedupe_results,
-    diversify_topk,
-    normalize_urls,
-    pick_time_range,
-    to_searx_locale,
-)
+from websearch.utils import dedupe_results, normalize_urls, pick_time_range, to_searx_locale
+from websearch.ranking import diversify_topk
 
 from .shared import NodeDependencies
 

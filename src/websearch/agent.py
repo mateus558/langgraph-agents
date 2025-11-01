@@ -24,7 +24,7 @@ from websearch.nodes import (
     build_web_search_node,
 )
 from websearch.nodes.shared import SupportsEmbedder
-from websearch.rerank import MMRReranker
+from websearch.ranking import MMRReranker
 from config import get_settings
 from core.time import resolve_timezone
 
