@@ -1,6 +1,6 @@
 # Architecture
 
-Generated: 2025-10-30 20:21:44
+Generated: 2025-11-01 00:09:09
 
 This document describes the system architecture and the agent graphs used in the project.
 
@@ -15,10 +15,10 @@ This document describes the system architecture and the agent graphs used in the
 
 ```mermaid
 flowchart TD
-    client[Client / SDK / Browser] --> api[LangGraph API / langgraph-agents]
+    client[Client / SDK / Browser] --> api[LangGraph API (langgraph-agents)]
     api --> chat[ChatAgent Graph]
     api --> web[WebSearchAgent Graph]
-    chat --> llm[LLM Provider]
+    chat --> llm[LLM Provider (OpenAI / Ollama)]
     web --> searx[SearxNG]
     web --> llm
     api --> redis[(Redis)]
