@@ -20,7 +20,7 @@ from chatagent.prompts import ASSISTANT_SYSTEM_PROMPT
 from core.time import build_chat_clock_vars, resolve_timezone
 from config import get_settings
 from core.contracts import AgentMixin, ModelFactory
-from utils.messages import TokenEstimator, coerce_message_content
+from utils.messages import TokenEstimator
 
 from chatagent.weather.tool import weather_tool
 
