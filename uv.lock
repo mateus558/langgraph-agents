@@ -8,64 +8,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "langgraph-agents"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "langchain" },
-    { name = "langchain-community" },
-    { name = "langchain-huggingface" },
-    { name = "langchain-ollama" },
-    { name = "langchain-openai" },
-    { name = "langgraph" },
-    { name = "langgraph-cli", extra = ["inmem"] },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "requests" },
-    { name = "sentence-transformers" },
-    { name = "tiktoken" },
-    { name = "torch" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "black" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "types-requests" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
-    { name = "langchain", specifier = ">=1.0.2" },
-    { name = "langchain-community", specifier = ">=0.4" },
-    { name = "langchain-huggingface", specifier = ">=1.0.0" },
-    { name = "langchain-ollama", specifier = ">=1.0.0" },
-    { name = "langchain-openai", specifier = ">=1.0.1" },
-    { name = "langgraph", specifier = ">=1.0.1" },
-    { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.4.4" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.4.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "sentence-transformers", specifier = ">=5.1.2" },
-    { name = "tiktoken", specifier = ">=0.5.0" },
-    { name = "torch", specifier = ">=2.9.0" },
-    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.31.0.10" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1335,6 +1277,66 @@ sdist = { url = "https://files.pythonhosted.org/packages/20/7c/a0f4211f751b8b37a
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b1/3c/acc0956a0da96b25a2c5c1a85168eacf1253639a04ed391d7a7bcaae5d6c/langgraph-1.0.1-py3-none-any.whl", hash = "sha256:892f04f64f4889abc80140265cc6bd57823dd8e327a5eef4968875f2cd9013bd", size = 155415, upload-time = "2025-10-20T18:51:58.321Z" },
 ]
+
+[[package]]
+name = "langgraph-agents"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "langchain" },
+    { name = "langchain-community" },
+    { name = "langchain-huggingface" },
+    { name = "langchain-ollama" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+    { name = "langgraph-api" },
+    { name = "langgraph-cli", extra = ["inmem"] },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "requests" },
+    { name = "sentence-transformers" },
+    { name = "tiktoken" },
+    { name = "torch" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "black" },
+    { name = "mypy" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "types-requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
+    { name = "langchain", specifier = ">=1.0.2" },
+    { name = "langchain-community", specifier = ">=0.4" },
+    { name = "langchain-huggingface", specifier = ">=1.0.0" },
+    { name = "langchain-ollama", specifier = ">=1.0.0" },
+    { name = "langchain-openai", specifier = ">=1.0.1" },
+    { name = "langgraph", specifier = ">=1.0.1" },
+    { name = "langgraph-api", specifier = ">=0.4.46" },
+    { name = "langgraph-cli", extras = ["inmem"], specifier = ">=0.4.4" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
+    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.4.0" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "requests", specifier = ">=2.31.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "sentence-transformers", specifier = ">=5.1.2" },
+    { name = "tiktoken", specifier = ">=0.5.0" },
+    { name = "torch", specifier = ">=2.9.0" },
+    { name = "types-requests", marker = "extra == 'dev'", specifier = ">=2.31.0.10" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "langgraph-api"
