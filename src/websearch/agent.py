@@ -100,11 +100,14 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
 
         # Try HuggingFace embeddings first (local, no API key needed)
         try:
-            from langchain_huggingface import HuggingFaceEmbeddings # type: ignore
-
+            from langchain_huggingface import HuggingFaceEmbeddings  # type: ignore
+        except ImportError as exc:
+            logger.warning("[websearch] langchain-huggingface import failed: %s", exc)
+        else:
             # Auto-detect GPU availability
             try:
-                import torch # type: ignore
+                import torch  # type: ignore
+
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 logger.info("[websearch] Initializing HuggingFaceEmbeddings for MMR (device: %s)", device)
             except ImportError:
@@ -113,16 +116,15 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
 
             # Allow model override via environment variable
             model_name = os.getenv("EMBEDDINGS_MODEL_NAME", "intfloat/e5-base-v2")
-            
-            return HuggingFaceEmbeddings(
-                model_name=model_name,
-                model_kwargs={"device": device},
-                encode_kwargs={"normalize_embeddings": True},
-            )
-        except ImportError:
-            logger.warning("[websearch] langchain-huggingface not available")
-        except Exception as exc:
-            logger.warning("[websearch] HuggingFaceEmbeddings init failed: %s", exc)
+
+            try:
+                return HuggingFaceEmbeddings(
+                    model_name=model_name,
+                    model_kwargs={"device": device},
+                    encode_kwargs={"normalize_embeddings": True},
+                )
+            except Exception as exc:
+                logger.warning("[websearch] HuggingFaceEmbeddings init failed: %s", exc)
 
         # Try OpenAI embeddings if API key available
         if os.getenv("OPENAI_API_KEY"):
