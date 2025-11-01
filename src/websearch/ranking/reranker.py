@@ -154,13 +154,15 @@ async def diversify_topk_mmr(
         from langchain_core.vectorstores.utils import maximal_marginal_relevance
 
         def _standalone_mmr() -> list[dict]:
-            texts = []
+            texts: list[str] = []
+            candidates: list[dict] = []
             for r in results[:fetch_k]:
                 title = r.get("title", "")
                 snippet = r.get("snippet", "")
                 content = f"{title}\n{snippet}".strip()
                 if content:
                     texts.append(content)
+                    candidates.append(r)
 
             if not texts:
                 return []
@@ -171,22 +173,10 @@ async def diversify_topk_mmr(
             try:
                 import numpy as np
 
-                query_embedding_np = np.array(query_embedding)
-                doc_embeddings_np = np.array(doc_embeddings)
-            except ImportError:
-                query_embedding_np = query_embedding
-                doc_embeddings_np = doc_embeddings
-
-            def _ensure_list(value: Any) -> Any:
-                return value.tolist() if hasattr(value, "tolist") else value
-
-            query_for_mmr = _ensure_list(query_embedding_np)
-            docs_for_mmr = _ensure_list(doc_embeddings_np)
-
-            if not isinstance(query_for_mmr, list):
-                query_for_mmr = list(query_for_mmr)
-            if not isinstance(docs_for_mmr, list):
-                docs_for_mmr = list(docs_for_mmr)
+                query_for_mmr = np.asarray(query_embedding)
+                docs_for_mmr = np.asarray(doc_embeddings)
+            except ImportError as exc:
+                raise ImportError("NumPy is required for standalone MMR reranking") from exc
 
             indices = maximal_marginal_relevance(
                 cast(Any, query_for_mmr),
@@ -195,7 +185,7 @@ async def diversify_topk_mmr(
                 lambda_mult=lambda_mult,
             )
 
-            return [results[i] for i in indices if i < len(results)]
+            return [candidates[i] for i in indices if i < len(candidates)]
 
         reranked = await asyncio.to_thread(_standalone_mmr)
         logger.debug(

@@ -120,9 +120,9 @@ class WebSearchAgent(AgentMixin[SearchState, dict[str, Any]]):
                 encode_kwargs={"normalize_embeddings": True},
             )
         except ImportError:
-            logger.debug("[websearch] langchain-huggingface not available")
+            logger.warning("[websearch] langchain-huggingface not available")
         except Exception as exc:
-            logger.debug("[websearch] HuggingFaceEmbeddings init failed: %s", exc)
+            logger.warning("[websearch] HuggingFaceEmbeddings init failed: %s", exc)
 
         # Try OpenAI embeddings if API key available
         if os.getenv("OPENAI_API_KEY"):
