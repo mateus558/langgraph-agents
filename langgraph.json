@@ -4,8 +4,5 @@
     "chatagent": "./src/chatagent/agent.py:chatagent",
     "websearch": "./src/websearch/agent.py:websearch"
   },
-  "env": ".env",
-  "auth": {
-    "path": "src/security/auth.py:auth"
-  }
+  "env": ".env"
 }
