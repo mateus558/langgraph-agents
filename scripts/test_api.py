@@ -14,6 +14,6 @@ input = {
     "stream": True,
 }
 
-for chunk in remote_graph.stream(input, stream_mode="messages"):
+for chunk in remote_graph.stream(input, stream_mode="values"):
     print(chunk)
 

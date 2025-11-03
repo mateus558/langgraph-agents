@@ -131,28 +131,51 @@ class ChatAgent(AgentMixin):
             out_text = ""
             try:
                 if do_stream:
-                    # Stream from the underlying runnable and forward message chunks
-                    # Note: Many LC runnables support astream; if not, we fall back.
-                    async for ev in agent.astream({"messages": msgs}, context=context):  # type: ignore[attr-defined]
-                        # The langchain agent returns a dict with messages when completed,
-                        # but during streaming we expect AIMessageChunk events.
-                        # Normalize a few common shapes here.
-                        content = getattr(ev, "content", None)
-                        if isinstance(content, str):
-                            # Likely an AIMessageChunk or similar message-like object
-                            out_text += content
-                            yield {"messages": [ev]}
-                        elif isinstance(ev, dict) and "messages" in ev:
-                            # Some implementations stream structured events; forward if they are chunks
-                            for m in ev["messages"]:
-                                m_content = getattr(m, "content", None)
-                                if isinstance(m_content, str):
-                                    out_text += m_content
-                                    yield {"messages": [m]}
-                        # Ignore other non-text events in this simplified bridge
+                    # Prefer event-level streaming to capture token chunks reliably.
+                    try:
+                        astream_events = getattr(agent, "astream_events")  # type: ignore[attr-defined]
+                    except Exception:
+                        astream_events = None
 
-                    # After stream completes, build final response from accumulated text
-                    resp = AIMessage(content=out_text)
+                    if astream_events is None:
+                        # Fallback to astream if events API is unavailable
+                        async for ev in agent.astream({"messages": msgs}, context=context):  # type: ignore[attr-defined]
+                            content = getattr(ev, "content", None)
+                            if isinstance(content, str):
+                                out_text += content
+                                yield {"messages": [AIMessage(content=content)]}
+                        resp = AIMessage(content=out_text)
+                    else:
+                        # Stream events and extract tokens or chat chunks
+                        async for event in astream_events({"messages": msgs}, context=context):  # type: ignore[misc]
+                            name = getattr(event, "event", None) or (event.get("event") if isinstance(event, dict) else None)
+                            data = getattr(event, "data", None) if not isinstance(event, dict) else event.get("data")
+
+                            if name in ("on_chat_model_stream", "on_llm_stream") and data is not None:
+                                # Prefer a provided AIMessageChunk if present
+                                chunk = None
+                                if isinstance(data, dict):
+                                    # Newer LC events ship 'chunk' for chat, or 'token' for text
+                                    if "chunk" in data:
+                                        chunk = data["chunk"]
+                                        # If chunk is a plain string
+                                        if isinstance(chunk, str):
+                                            out_text += chunk
+                                            yield {"messages": [AIMessage(content=chunk)]}
+                                            continue
+                                    if "token" in data and isinstance(data["token"], str):
+                                        tok = data["token"]
+                                        out_text += tok
+                                        yield {"messages": [AIMessage(content=tok)]}
+                                        continue
+                                # Fallback: try generic content
+                                content = getattr(data, "content", None)
+                                if isinstance(content, str):
+                                    out_text += content
+                                    yield {"messages": [AIMessage(content=content)]}
+
+                        # After stream completes, build final response from accumulated text
+                        resp = AIMessage(content=out_text)
                 else:
                     # Non-streaming path: single final invocation
                     result = await agent.ainvoke({"messages": msgs}, context=context)  # type: ignore[attr-defined]
