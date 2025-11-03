@@ -5,8 +5,9 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any
 
-from langchain_core.messages import SystemMessage, AIMessage
+from langchain_core.messages import SystemMessage, AIMessage, AIMessageChunk
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import CachePolicy
 from langgraph.cache.memory import InMemoryCache
@@ -108,6 +109,19 @@ class ChatAgent(AgentMixin):
     def _build_generate_node(self):
         agent = self._build_langchain_agent()
 
+        def _chunk_to_text(content: Any) -> str:
+            if isinstance(content, str):
+                return content
+            if isinstance(content, list):
+                pieces: list[str] = []
+                for part in content:
+                    if isinstance(part, dict):
+                        text = part.get("text")
+                        if isinstance(text, str):
+                            pieces.append(text)
+                return "".join(pieces)
+            return str(content) if content is not None else ""
+
         async def _generate(state: AgentState):
             """Generate node with optional token streaming.
 
@@ -128,7 +142,9 @@ class ChatAgent(AgentMixin):
             do_stream = bool(state.get("stream", self.config.default_stream))
 
             t0 = time.perf_counter()
-            out_text = ""
+            out_parts: list[str] = []
+            last_chunk: AIMessageChunk | None = None
+            resp: AIMessage | None = None
             try:
                 if do_stream:
                     # Prefer event-level streaming to capture token chunks reliably.
@@ -140,11 +156,26 @@ class ChatAgent(AgentMixin):
                     if astream_events is None:
                         # Fallback to astream if events API is unavailable
                         async for ev in agent.astream({"messages": msgs}, context=context):  # type: ignore[attr-defined]
-                            content = getattr(ev, "content", None)
-                            if isinstance(content, str):
-                                out_text += content
-                                yield {"messages": [AIMessage(content=content)]}
-                        resp = AIMessage(content=out_text)
+                            # Many runnables yield AIMessageChunk or dicts with "content"
+                            candidate = ev
+                            if isinstance(ev, dict) and "messages" in ev:
+                                # LangChain sometimes wraps the chunk in a dict
+                                candidate = ev["messages"]
+                            if isinstance(candidate, list) and candidate:
+                                candidate = candidate[-1]
+
+                            if isinstance(candidate, AIMessageChunk):
+                                text = _chunk_to_text(candidate.content)
+                                if text:
+                                    out_parts.append(text)
+                                last_chunk = candidate
+                                yield {"messages": candidate}
+                            else:
+                                content = getattr(candidate, "content", None)
+                                if isinstance(content, str):
+                                    out_parts.append(content)
+                                    yield {"messages": AIMessage(content=content)}
+                        resp = AIMessage(content="".join(out_parts))
                     else:
                         # Stream events and extract tokens or chat chunks
                         async for event in astream_events({"messages": msgs}, context=context):  # type: ignore[misc]
@@ -158,24 +189,43 @@ class ChatAgent(AgentMixin):
                                     # Newer LC events ship 'chunk' for chat, or 'token' for text
                                     if "chunk" in data:
                                         chunk = data["chunk"]
+                                        if isinstance(chunk, AIMessageChunk):
+                                            text = _chunk_to_text(chunk.content)
+                                            if text:
+                                                out_parts.append(text)
+                                            last_chunk = chunk
+                                            yield {"messages": chunk}
+                                            continue
                                         # If chunk is a plain string
                                         if isinstance(chunk, str):
-                                            out_text += chunk
-                                            yield {"messages": [AIMessage(content=chunk)]}
+                                            out_parts.append(chunk)
+                                            yield {"messages": AIMessage(content=chunk)}
                                             continue
                                     if "token" in data and isinstance(data["token"], str):
                                         tok = data["token"]
-                                        out_text += tok
-                                        yield {"messages": [AIMessage(content=tok)]}
+                                        out_parts.append(tok)
+                                        yield {"messages": AIMessage(content=tok)}
                                         continue
                                 # Fallback: try generic content
                                 content = getattr(data, "content", None)
                                 if isinstance(content, str):
-                                    out_text += content
-                                    yield {"messages": [AIMessage(content=content)]}
+                                    out_parts.append(content)
+                                    yield {"messages": AIMessage(content=content)}
 
                         # After stream completes, build final response from accumulated text
-                        resp = AIMessage(content=out_text)
+                        final_text = "".join(out_parts)
+                        if last_chunk is not None:
+                            resp = AIMessage(
+                                content=final_text,
+                                additional_kwargs=last_chunk.additional_kwargs,
+                                response_metadata=last_chunk.response_metadata,
+                                usage_metadata=getattr(last_chunk, "usage_metadata", None),
+                                id=getattr(last_chunk, "id", None),
+                            )
+                        else:
+                            resp = AIMessage(content=final_text)
+                        if not out_parts:
+                            out_parts = [str(resp.content)]
                 else:
                     # Non-streaming path: single final invocation
                     result = await agent.ainvoke({"messages": msgs}, context=context)  # type: ignore[attr-defined]
@@ -186,11 +236,13 @@ class ChatAgent(AgentMixin):
                     else:
                         # Fallback: coerce result to text
                         resp = AIMessage(content=str(result))
-                    out_text = str(resp.content)
+                    out_parts = [str(resp.content)]
             finally:
                 dt = time.perf_counter() - t0
 
-            output_tokens = self._tokenizer.count_text(out_text)
+            resp = resp or AIMessage(content="")
+            final_text = "".join(out_parts) if out_parts else str(resp.content)
+            output_tokens = self._tokenizer.count_text(final_text)
             step_total = input_tokens + output_tokens
 
             stats = state.get("stats", {})
@@ -212,7 +264,7 @@ class ChatAgent(AgentMixin):
 
             new_history = (state.get("history", []) + ([msgs[-1]] if msgs else []) + [resp])
             # In async generator nodes, yield the final update and return without value
-            yield {"messages": [resp], "history": new_history, "stats": stats}
+            yield {"messages": resp, "history": new_history, "stats": stats}
             return
 
         return _generate
