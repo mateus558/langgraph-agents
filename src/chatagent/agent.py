@@ -109,25 +109,61 @@ class ChatAgent(AgentMixin):
         agent = self._build_langchain_agent()
 
         async def _generate(state: AgentState):
+            """Generate node with optional token streaming.
+
+            When state["stream"] (or default_stream) is True, this function will
+            yield incremental AIMessageChunk updates to the "messages" channel.
+            At the end, it returns the final assembled AIMessage and stats.
+            """
             run_id = (state.get("metadata") or {}).get("run_id", "unknown")
             msgs = state.get("messages", [])
-            
+
             # Build runtime context for the middleware
             clock = build_chat_clock_vars(self.tz)["clock"]
             context = {"clock": clock, "summary": state.get("summary") or ""}
 
-            # Token estimate (input) - approximate (we don't inject SystemMessage anymore)
+            # Token estimate (input) - approximate
             input_tokens = self._tokenizer.count_messages(msgs)
 
-            t0 = time.perf_counter()
-            try:
-                result = await agent.ainvoke({"messages": msgs}, context=context) # type: ignore
+            do_stream = bool(state.get("stream", self.config.default_stream))
 
-                final_msgs = result["messages"]
-                last = final_msgs[-1] if final_msgs else AIMessage(content="")
-                resp = last if isinstance(last, AIMessage) else AIMessage(content=str(last))
-                out_text = str(resp.content)
-               
+            t0 = time.perf_counter()
+            out_text = ""
+            try:
+                if do_stream:
+                    # Stream from the underlying runnable and forward message chunks
+                    # Note: Many LC runnables support astream; if not, we fall back.
+                    async for ev in agent.astream({"messages": msgs}, context=context):  # type: ignore[attr-defined]
+                        # The langchain agent returns a dict with messages when completed,
+                        # but during streaming we expect AIMessageChunk events.
+                        # Normalize a few common shapes here.
+                        content = getattr(ev, "content", None)
+                        if isinstance(content, str):
+                            # Likely an AIMessageChunk or similar message-like object
+                            out_text += content
+                            yield {"messages": [ev]}
+                        elif isinstance(ev, dict) and "messages" in ev:
+                            # Some implementations stream structured events; forward if they are chunks
+                            for m in ev["messages"]:
+                                m_content = getattr(m, "content", None)
+                                if isinstance(m_content, str):
+                                    out_text += m_content
+                                    yield {"messages": [m]}
+                        # Ignore other non-text events in this simplified bridge
+
+                    # After stream completes, build final response from accumulated text
+                    resp = AIMessage(content=out_text)
+                else:
+                    # Non-streaming path: single final invocation
+                    result = await agent.ainvoke({"messages": msgs}, context=context)  # type: ignore[attr-defined]
+                    final_msgs = result.get("messages") if isinstance(result, dict) else None
+                    if final_msgs:
+                        last = final_msgs[-1]
+                        resp = last if isinstance(last, AIMessage) else AIMessage(content=str(last))
+                    else:
+                        # Fallback: coerce result to text
+                        resp = AIMessage(content=str(result))
+                    out_text = str(resp.content)
             finally:
                 dt = time.perf_counter() - t0
 
@@ -152,7 +188,9 @@ class ChatAgent(AgentMixin):
             )
 
             new_history = (state.get("history", []) + ([msgs[-1]] if msgs else []) + [resp])
-            return {"messages": [resp], "history": new_history, "stats": stats}
+            # In async generator nodes, yield the final update and return without value
+            yield {"messages": [resp], "history": new_history, "stats": stats}
+            return
 
         return _generate
 

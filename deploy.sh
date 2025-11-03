@@ -27,7 +27,7 @@ generate_architecture() {
 
 echo "Generating Dockerfile with langgraph..."
 # Generate Dockerfile (overwrites or creates Dockerfile in repo root)
-langgraph dockerfile Dockerfile
+uv run langgraph dockerfile Dockerfile
 
 # Always regenerate architecture docs before committing/deploying
 generate_architecture

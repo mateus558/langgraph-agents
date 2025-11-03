@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from langchain_core.messages import BaseMessage
-from typing import TypedDict, List, Optional, Protocol
+from typing import TypedDict, List, Optional, Protocol, Annotated
+from langgraph.graph.message import add_messages
 
 
 class AgentStats(TypedDict, total=False):
@@ -15,7 +16,8 @@ class AgentMeta(TypedDict, total=False):
 
 class AgentState(TypedDict, total=False):
     # current request/turn messages (LLM-ready)
-    messages: List[BaseMessage]
+    # Annotated with add_messages to support incremental streaming of AIMessageChunk
+    messages: Annotated[List[BaseMessage], add_messages]
     # rolling history you’re keeping outside the current turn
     history: List[BaseMessage]
     # short rolling summary for context compression
